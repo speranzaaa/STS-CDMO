@@ -1,4 +1,4 @@
-# 🏆 CDMO Project – Sports Tournament Scheduling (STS)
+# CDMO Project – Sports Tournament Scheduling (STS)
 
 This repository contains the source code, experimental results, and report for the **Combinatorial Decision Making and Optimization (CDMO)** project work, academic year 2024/2025.
 
