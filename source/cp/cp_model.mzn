@@ -47,7 +47,10 @@ constraint
 constraint
   games[1, 1, 1] == 1;
 
-solve satisfy;
+solve :: int_search(
+  [games[w,p,s] | w in 1..weeks, p in 1..periods, s in 1..2],
+  first_fail, indomain_min, complete
+) satisfy;
 
 % Output formatted
 output [
