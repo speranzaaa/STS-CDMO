@@ -12,7 +12,7 @@ The goal of the project is to model and solve the **Sports Tournament Scheduling
 The problem was tackled using three combinatorial optimization paradigms:
 - Constraint Programming (CP)
 - Satisfiability/Satisfiability Modulo Theories (SAT/SMT)
-- Mixed-Integer Linear Programming (MIP)
+- Mixed-Integer Linear Programming (MILP)
 
 An optional objective was also considered: minimizing the unbalance between home and away games for each team.
 
