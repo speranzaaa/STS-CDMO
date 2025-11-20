@@ -68,7 +68,6 @@ for inst_name in INSTANCES:
                 runtime_sec = TIME_LIMIT_SEC 
                 print(f"--- ERROR: Instance {inst_name} output was not valid JSON! ---")
                 print(stdout)
-                print(f"--------------------------------------------------")
         else:
             optimal = False
             sol_data = [] 
@@ -77,7 +76,6 @@ for inst_name in INSTANCES:
             if stderr:
                 print(f"--- ERROR: Instance {inst_name} produced an error ---")
                 print(stderr)
-                print(f"---------------------------------------")
 
     except subprocess.TimeoutExpired:
         runtime_sec = TIME_LIMIT_SEC
@@ -108,4 +106,5 @@ for inst_name in INSTANCES:
     all_results[APPROACH_NAME] = approach_result
 
     with open(json_file_path, 'w') as f:
+
         json.dump(all_results, f)
