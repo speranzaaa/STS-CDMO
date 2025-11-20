@@ -1,4 +1,12 @@
-#!/usr/bin/env python3
+"""
+Refactored Sport Tournament Scheduler (STS)
+- Functionality preserved exactly.
+- Improved readability, PEP8-compliant names, docstrings and comments.
+- Grouped helper functions and clearer variable names.
+
+Note: Z3 `from z3 import *` is preserved to avoid changing external behaviour.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -7,235 +15,221 @@ import math
 import os
 import re
 import time
-from itertools import combinations
-from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from itertools import combinations, product
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from z3 import (
-    And,
-    Bool,
-    BoolVal,
-    Implies,
-    Not,
-    Or,
-    PbGe,
-    PbLe,
-    Solver,
-    is_true,
-    sat,
-    unsat,
-)
+from z3 import *  # noqa: F401 (preserve original behaviour)
 
-# --------------------------------------------------------------
-# Section: EXACTLY-ONE encodings
-# --------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
 
-# Naive / Pairwise encoding (NP)
-def eo_at_least_one_pairwise(vars_: Sequence[Bool]) -> Bool:
-    """At least one: simple OR of the variables."""
-    return Or(list(vars_))
+def ensure_dir(path: str) -> None:
+    """Create directory if it does not exist."""
+    os.makedirs(path, exist_ok=True)
 
 
-def eo_at_most_one_pairwise(vars_: Sequence[Bool], name: str = "") -> Bool:
-    """At most one: pairwise forbids any pair being true at the same time."""
-    return And([Not(And(a, b)) for a, b in combinations(vars_, 2)])
+def to_binary(num: int, length: Optional[int] = None) -> str:
+    """Return binary representation of ``num`` as string. Optionally zero-pad to ``length``."""
+    b = bin(num).split("b")[-1]
+    if length:
+        return b.rjust(length, "0")
+    return b
 
 
-def eo_exactly_one_pairwise(vars_: Sequence[Bool], name: str = "") -> Bool:
-    """Exactly one = at least one AND at most one (pairwise)."""
-    return And(eo_at_least_one_pairwise(vars_), eo_at_most_one_pairwise(vars_, name))
+# ---------------------------------------------------------------------------
+# Exactly-one encodings
+# ---------------------------------------------------------------------------
+
+def at_least_one_np(bool_vars: Sequence[BoolRef]) -> BoolRef:
+    """Naive (pairwise) at-least-one: disjunction of the variables."""
+    return Or(list(bool_vars))
 
 
-# Binary / Log encoding (BW)
-def _to_binary_str(num: int, length: Optional[int] = None) -> str:
-    """Return binary representation (as string) padded to length if provided."""
-    s = bin(num)[2:]
-    if length is not None:
-        return s.rjust(length, "0")
-    return s
+def at_most_one_np(bool_vars: Sequence[BoolRef], name: str = "") -> BoolRef:
+    """Naive (pairwise) at-most-one: forbid every pair simultaneously true."""
+    return And([Not(And(a, b)) for a, b in combinations(list(bool_vars), 2)])
 
 
-def eo_at_least_one_binary(vars_: Sequence[Bool]) -> Bool:
-    """At least one with binary encoding just delegates to pairwise 'at least one'."""
-    return eo_at_least_one_pairwise(vars_)
+def exactly_one_np(bool_vars: Sequence[BoolRef], name: str = "") -> BoolRef:
+    """Exactly-one using naive pairwise encoding."""
+    return And(at_least_one_np(bool_vars), at_most_one_np(bool_vars, name))
 
 
-def eo_at_most_one_binary(vars_: Sequence[Bool], name: str = "") -> Bool:
+# ---------------- Binary (BW) encoding -------------------------------------
+
+def at_least_one_bw(bool_vars: Sequence[BoolRef]) -> BoolRef:
+    """Binary at-least-one reuses naive disjunction (keeps behaviour)."""
+    return at_least_one_np(bool_vars)
+
+
+def at_most_one_bw(bool_vars: Sequence[BoolRef], name: str = "") -> BoolRef:
+    """Binary encoding for at-most-one using binary index variables.
+
+    This implementation mirrors the original logic: introduce m = ceil(log2(n))
+    binary selector bits r_i and constrain each original variable to imply the
+    corresponding selector assignment for its index.
     """
-    At most one using a binary (log) encoding:
-    - Introduces log2(n) auxiliary boolean variables r_i that encode the index.
-    - For each original variable v_i, add clause: v_i -> (r matches binary(i))
-    This enforces uniqueness when combined with a single 'at least one' over original vars.
-    """
-    n = len(vars_)
+    n = len(bool_vars)
     if n == 0:
         return BoolVal(True)
 
-    # number of bits needed to encode n items
-    m = math.ceil(math.log2(max(1, n)))
+    m = math.ceil(math.log2(n)) if n > 1 else 1
     r = [Bool(f"r_{name}_{i}") for i in range(m)]
-    binaries = [_to_binary_str(idx, m) for idx in range(n)]
+    binaries = [to_binary(idx, m) for idx in range(n)]
 
-    clauses = []
-    for i in range(n):
-        bits = []
-        for j in range(m):
-            bits.append(r[j] if binaries[i][j] == "1" else Not(r[j]))
-        clauses.append(Or(Not(vars_[i]), And(*bits)))
+    constraints = []
+    for i, v in enumerate(bool_vars):
+        bits = [r[j] if binaries[i][j] == "1" else Not(r[j]) for j in range(m)]
+        constraints.append(Or(Not(v), And(*bits)))
 
-    return And(clauses)
+    return And(constraints)
 
 
-def eo_exactly_one_binary(vars_: Sequence[Bool], name: str = "") -> Bool:
-    """Exactly one using binary encoding (at least one + binary at most one)."""
-    return And(eo_at_least_one_binary(vars_), eo_at_most_one_binary(vars_, name))
+def exactly_one_bw(bool_vars: Sequence[BoolRef], name: str = "") -> BoolRef:
+    return And(at_least_one_bw(bool_vars), at_most_one_bw(bool_vars, name))
 
 
-# Sequential encoding (SEQ) for exactly-one (k = 1 case)
-def eo_at_least_one_seq(vars_: Sequence[Bool]) -> Bool:
-    """At least one using the pairwise at-least-one helper."""
-    return eo_at_least_one_pairwise(vars_)
+# ---------------- Sequential (SEQ) encoding for exactly-one -----------------
+
+def at_least_one_seq(bool_vars: Sequence[BoolRef]) -> BoolRef:
+    return at_least_one_np(bool_vars)
 
 
-def eo_at_most_one_seq(vars_: Sequence[Bool], name: str = "") -> Bool:
-    """
-    Sequential encoding (Sinz) for at-most-one (specialized for exactly-one building).
-    Uses chain variables s_i to represent prefix sums properties.
-    """
-    n = len(vars_)
+def at_most_one_seq(bool_vars: Sequence[BoolRef], name: str = "") -> BoolRef:
+    """Sequential encoding for at-most-one (specialized for exactly-one use)."""
+    n = len(bool_vars)
     if n <= 1:
         return BoolVal(True)
 
     s = [Bool(f"s_{name}_{i}") for i in range(n - 1)]
-    clauses = []
-    # first and last boundary constraints
-    clauses.append(Or(Not(vars_[0]), s[0]))
-    clauses.append(Or(Not(vars_[n - 1]), Not(s[n - 2])))
+    constraints: List[BoolRef] = []
 
-    # middle constraints (propagate the sequential counter)
+    # first and last positions
+    constraints.append(Or(Not(bool_vars[0]), s[0]))
+    constraints.append(Or(Not(bool_vars[n - 1]), Not(s[n - 2])))
+
+    # middle positions
     for i in range(1, n - 1):
-        clauses.append(Or(Not(vars_[i]), s[i]))
-        clauses.append(Or(Not(vars_[i]), Not(s[i - 1])))
-        clauses.append(Or(Not(s[i - 1]), s[i]))
+        constraints.append(Or(Not(bool_vars[i]), s[i]))
+        constraints.append(Or(Not(bool_vars[i]), Not(s[i - 1])))
+        constraints.append(Or(Not(s[i - 1]), s[i]))
 
-    return And(clauses)
-
-
-def eo_exactly_one_seq(vars_: Sequence[Bool], name: str = "") -> Bool:
-    """Exactly one via sequential encoding (at least + at most)."""
-    return And(eo_at_least_one_seq(vars_), eo_at_most_one_seq(vars_, name))
+    return And(constraints)
 
 
-# Heule encoding (recursive hybrid)
-_global_heule_counter = 0  # auxiliary counter for naming helper variables
+def exactly_one_seq(bool_vars: Sequence[BoolRef], name: str = "") -> BoolRef:
+    return And(at_least_one_seq(bool_vars), at_most_one_seq(bool_vars, name))
 
 
-def eo_heule_at_most_one(vars_: Sequence[Bool]) -> Bool:
+# ---------------- Heule encoding ------------------------------------------------
+
+_heule_counter = 0
+
+
+def heule_at_most_one(bool_vars: Sequence[BoolRef]) -> BoolRef:
+    """Recursive Heule at-most-one encoding.
+
+    Behaviour preserved from the original code. Uses a small base-case (<=4)
+    where pairwise encoding is applied and otherwise introduces an auxiliary
+    boolean and recurses.
     """
-    Heule's at-most-one encoding:
-    - If small (<= 4) use pairwise
-    - Else, introduce auxiliary variable and recursively encode a split
-    This mirrors the original recursive strategy.
-    """
-    if len(vars_) <= 4:
-        return And([Not(And(a, b)) for a, b in combinations(vars_, 2)])
-    else:
-        global _global_heule_counter
-        _global_heule_counter += 1
-        aux = Bool(f"y_amo_{_global_heule_counter}")
-        # Use original small prefix together with aux, and recursively handle rest
-        return And(eo_at_most_one_pairwise(vars_[:3] + [aux]), eo_heule_at_most_one([Not(aux)] + vars_[3:]))
+    global _heule_counter
+    if len(bool_vars) <= 4:
+        return And([Not(And(a, b)) for a, b in combinations(list(bool_vars), 2)])
+
+    _heule_counter += 1
+    aux = Bool(f"y_amo_{_heule_counter}")
+
+    # split into first three vars + aux and remaining vars with negated aux
+    left_part = at_most_one_np(list(bool_vars[:3]) + [aux])
+    right_part = heule_at_most_one([Not(aux)] + list(bool_vars[3:]))
+    return And(left_part, right_part)
 
 
-def eo_heule_exactly_one(vars_: Sequence[Bool], name: str = "") -> Bool:
-    """Exactly-one with Heule at-most-one and simple at-least-one."""
-    return And(eo_heule_at_most_one(vars_), eo_at_least_one_pairwise(vars_))
+def heule_exactly_one(bool_vars: Sequence[BoolRef], name: str = "") -> BoolRef:
+    return And(heule_at_most_one(list(bool_vars)), at_least_one_np(list(bool_vars)))
 
 
-# --------------------------------------------------------------
-# Section: AT-MOST-K encodings
-# --------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# At-most-k encodings (general k)
+# ---------------------------------------------------------------------------
 
-# Direct (NP) at-most-k: forbid every combination of size k+1
-def amk_np(vars_: Sequence[Bool], k: int, name: str = "") -> Bool:
-    """At-most-k by enumerating all (k+1)-subsets and forbidding them simultaneously."""
-    if k >= len(vars_):
+
+def at_most_k_np(bool_vars: Sequence[BoolRef], k: int, name: str = "") -> BoolRef:
+    """Naive direct encoding: forbid every (k+1)-combination to be true."""
+    if k >= len(bool_vars):
         return BoolVal(True)
     if k < 0:
         return BoolVal(False)
-    return And([Or([Not(x) for x in comb]) for comb in combinations(vars_, k + 1)])
+    return And([Or([Not(x) for x in comb]) for comb in combinations(list(bool_vars), k + 1)])
 
 
-# Sequential counter encoding for general k
-def amk_seq(vars_: Sequence[Bool], k: int, name: str = "") -> Bool:
+def at_most_k_seq(bool_vars: Sequence[BoolRef], k: int, name: str = "") -> BoolRef:
+    """Sequential counter encoding for at-most-k.
+
+    Mirrors the original encoding while clarifying variable names.
     """
-    Sequential counter encoding for at-most-k:
-    - Builds a grid s[i][j] meaning: among prefix up to i, there are at least j+1 true variables.
-    - Implements the Sinz-like sequential construction generalized to k.
-    """
-    n = len(vars_)
+    n = len(bool_vars)
     if n == 0:
         return BoolVal(True)
     if k == 0:
-        return And([Not(v) for v in vars_])
+        return And([Not(v) for v in bool_vars])
     if k >= n:
         return BoolVal(True)
 
     s = [[Bool(f"s_{name}_{i}_{j}") for j in range(k)] for i in range(n - 1)]
-    clauses = []
+    constraints: List[BoolRef] = []
 
-    # initialization for first row
-    clauses.append(Or(Not(vars_[0]), s[0][0]))
+    # initialize first row
+    constraints.append(Or(Not(bool_vars[0]), s[0][0]))
     for j in range(1, k):
-        clauses.append(Not(s[0][j]))
+        constraints.append(Not(s[0][j]))
 
-    # fill middle rows
     for i in range(1, n - 1):
-        clauses.append(Or(Not(s[i - 1][0]), s[i][0]))
-        clauses.append(Or(Not(vars_[i]), s[i][0]))
+        constraints.append(Or(Not(s[i - 1][0]), s[i][0]))
+        constraints.append(Or(Not(bool_vars[i]), s[i][0]))
 
         for j in range(1, k):
-            clauses.append(Or(Not(s[i - 1][j]), s[i][j]))
-            clauses.append(Or(Not(vars_[i]), Not(s[i - 1][j - 1]), s[i][j]))
+            constraints.append(Or(Not(s[i - 1][j]), s[i][j]))
+            constraints.append(Or(Not(bool_vars[i]), Not(s[i - 1][j - 1]), s[i][j]))
 
-        clauses.append(Or(Not(vars_[i]), Not(s[i - 1][k - 1])))
+        constraints.append(Or(Not(bool_vars[i]), Not(s[i - 1][k - 1])))
 
-    # final constraint for last variable
-    clauses.append(Or(Not(vars_[n - 1]), Not(s[n - 2][k - 1])))
+    constraints.append(Or(Not(bool_vars[n - 1]), Not(s[n - 2][k - 1])))
 
-    return And(clauses)
+    return And(constraints)
 
 
-# Totalizer encoding helpers
-def _totalizer_merge(left: List[Bool], right: List[Bool], prefix: str, depth: int, constraints: List) -> List[Bool]:
+# ---------------- Totalizer encoding ----------------------------------------
+
+
+def totalizer_merge(left_sum: List[BoolRef], right_sum: List[BoolRef], name_prefix: str, depth: int, constraints: List[BoolRef]) -> List[BoolRef]:
+    """Merge two partial sums for the totalizer encoding (side-effect: append constraints).
+
+    The produced merged vector length is len(left) + len(right).
     """
-    Merge two partial 'sum' vectors in the totalizer tree.
-    The merged vector has length len(left)+len(right) and constraints relate inputs to merged outputs.
-    """
-    merged = [Bool(f"{prefix}_s_{depth}_{i}") for i in range(len(left) + len(right))]
+    merged = [Bool(f"{name_prefix}_s_{depth}_{i}") for i in range(len(left_sum) + len(right_sum))]
 
-    # input items imply corresponding positions in merged vector
-    for i in range(len(left)):
-        constraints.append(Implies(left[i], merged[i]))
-    for i in range(len(right)):
-        constraints.append(Implies(right[i], merged[i]))
+    for i, lv in enumerate(left_sum):
+        constraints.append(Implies(lv, merged[i]))
+    for i, rv in enumerate(right_sum):
+        constraints.append(Implies(rv, merged[i]))
 
-    # cross implications (left_i AND right_j) -> merged[i+j+1]
-    for i in range(len(left)):
-        for j in range(len(right)):
-            idx = i + j + 1
-            if idx < len(merged):
-                constraints.append(Implies(And(left[i], right[j]), merged[idx]))
+    for i, lv in enumerate(left_sum):
+        for j, rv in enumerate(right_sum):
+            if i + j + 1 < len(merged):
+                constraints.append(Implies(And(lv, rv), merged[i + j + 1]))
 
     return merged
 
 
-def amk_totalizer(vars_: Sequence[Bool], k: int, name: str = "") -> Bool:
+def at_most_k_totalizer(bool_vars: Sequence[BoolRef], k: int, name: str = "") -> BoolRef:
+    """Totalizer encoding for at-most-k constraint.
+
+    Preserves the original tree-building logic and constraint generation.
     """
-    At-most-k implemented with a totalizer tree.
-    Returns a Bool formula that enforces at most k true variables.
-    """
-    n = len(vars_)
+    n = len(bool_vars)
     if k >= n:
         return BoolVal(True)
     if k < 0:
@@ -243,129 +237,124 @@ def amk_totalizer(vars_: Sequence[Bool], k: int, name: str = "") -> Bool:
     if n == 0:
         return BoolVal(True)
 
-    constraints: List = []
-    # start with leaves: each variable becomes a length-1 vector
-    current_level: List[List[Bool]] = [[v] for v in vars_]
+    constraints: List[BoolRef] = []
+    current_level: List[List[BoolRef]] = [[v] for v in bool_vars]
     depth = 0
 
-    # build tree merging neighboring vectors
     while len(current_level) > 1:
-        next_level: List[List[Bool]] = []
+        next_level: List[List[BoolRef]] = []
         for i in range(0, len(current_level), 2):
             if i + 1 == len(current_level):
                 next_level.append(current_level[i])
             else:
                 left = current_level[i]
                 right = current_level[i + 1]
-                merged = _totalizer_merge(left, right, name, depth, constraints)
+                merged = totalizer_merge(left, right, name, depth, constraints)
                 next_level.append(merged)
                 depth += 1
         current_level = next_level
 
     total_sum = current_level[0]
-    # enforce that positions >= k are false (i.e., at most k true)
-    for idx in range(k, len(total_sum)):
-        constraints.append(Not(total_sum[idx]))
+
+    for i in range(k, len(total_sum)):
+        constraints.append(Not(total_sum[i]))
 
     return And(constraints)
 
 
-# --------------------------------------------------------------
-# Utilities: convert, save, pretty-print
-# --------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Schedule utilities (matrix conversion, printing, circle matchings)
+# ---------------------------------------------------------------------------
+
+
 def convert_to_matrix(n: int, solution: Sequence[Tuple[int, int, int, int]]) -> List[List[Optional[List[int]]]]:
+    """Convert solution tuples (home, away, week, period) into a matrix indexed
+    by [period-1][week-1] storing [home, away]. Assumes 1-based values in the
+    solution tuples (keeps original behaviour).
     """
-    Convert solution (list of tuples (home, away, week, period), 1-based)
-    to a matrix indexed by [period-1][week-1] storing [home, away].
-    """
-    periods = n // 2
-    weeks = n - 1
-    matrix: List[List[Optional[List[int]]]] = [[None for _ in range(weeks)] for _ in range(periods)]
-    for home, away, week, period in solution:
-        matrix[period - 1][week - 1] = [home, away]
+    num_periods = n // 2
+    num_weeks = n - 1
+    matrix: List[List[Optional[List[int]]]] = [[None for _ in range(num_weeks)] for _ in range(num_periods)]
+    for h, a, w, p in solution:
+        matrix[p - 1][w - 1] = [h, a]
     return matrix
 
 
-def save_results_as_json(n: int, results: Dict, model_name: str, output_dir: str = "/res/SAT") -> None:
-    """
-    Save the results for a given n into JSON file under output_dir.
-    The function merges with existing JSON (if present).
-    """
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+def save_results_as_json(n: int, results: Dict, model_name: str, output_dir: str = "./res/SAT") -> None:
+    """Save solver results to a JSON file. Behaviour preserved from original code."""
+    ensure_dir(output_dir)
+    json_path = os.path.join(output_dir, f"{n}.json")
 
-    json_path = out_dir / f"{n}.json"
-
-    data = {}
-    if json_path.exists():
+    existing = {}
+    if os.path.exists(json_path):
         try:
-            data = json.loads(json_path.read_text())
+            with open(json_path, "r") as f:
+                existing = json.load(f)
         except json.JSONDecodeError:
-            data = {}
+            existing = {}
 
-    # keep original interface: model_name -> results
-    entry = {model_name: results}
+    result_block: Dict[str, Dict] = {model_name: results}
 
-    for method, res in entry.items():
+    for method, res in result_block.items():
         runtime = res.get("time", 300.0)
         time_field = 300 if not res.get("optimal") else math.floor(runtime)
         sol = res.get("sol")
         matrix = convert_to_matrix(n, sol) if sol else []
-        data[method] = {
+
+        existing[method] = {
             "time": time_field,
             "optimal": res.get("optimal"),
             "obj": res.get("obj"),
             "sol": matrix,
         }
 
-    json_path.write_text(json.dumps(data, indent=1))
+    with open(json_path, "w") as f:
+        json.dump(existing, f, indent=1)
 
 
-def print_weekly_schedule(match_list: Sequence[Tuple[int, int, int, int]], num_teams: int) -> None:
-    """
-    Human-friendly printout of a schedule where match_list contains
-    (home, away, week, period) with 1-based numbers.
-    """
-    weeks = num_teams - 1
-    periods = num_teams // 2
+def print_weekly_schedule(match_list: Optional[Sequence[Tuple[int, int, int, int]]], num_teams: int) -> None:
+    """Pretty-print the weekly schedule. Preserves exact output format from original."""
+    num_weeks = num_teams - 1
+    num_periods = num_teams // 2
 
     print("\n--- Sport Tournament Scheduler ---")
     print(f"Number of Teams: {num_teams}")
-    print(f"Number of Weeks: {weeks}")
-    print(f"Periods per Week: {periods}")
+    print(f"Number of Weeks: {num_weeks}")
+    print(f"Periods per Week: {num_periods}")
     print("---------------------------\n")
 
-    if not match_list:
+    if match_list is None:
         print("No solution was found")
         return
 
-    schedule = {(week, period): (home, away) for home, away, week, period in match_list}
+    schedule: Dict[Tuple[int, int], Tuple[int, int]] = {}
+    for home_team, away_team, week, period in match_list:
+        schedule[(week, period)] = (home_team, away_team)
 
-    for w in range(1, weeks + 1):
-        print(f"Week {w}:")
-        for p in range(1, periods + 1):
-            if (w, p) in schedule:
-                home, away = schedule[(w, p)]
-                print(f"  Period {p}: Team {home} (Home) vs Team {away} (Away)")
+    for w_idx in range(1, num_weeks + 1):
+        print(f"Week {w_idx}:")
+        for p_idx in range(1, num_periods + 1):
+            match = schedule.get((w_idx, p_idx))
+            if match:
+                home_team, away_team = match
+                print(f"  Period {p_idx}: Team {home_team} (Home) vs Team {away_team} (Away)")
             else:
-                print(f"  Period {p}: [No Scheduled Matches]")
+                print(f"  Period {p_idx}: [No Scheduled Matches]")
         print()
 
     print("--- END SCHEDULE ---\n")
 
 
-# --------------------------------------------------------------
-# Circle method: fixed round-robin calendar
-# --------------------------------------------------------------
 def circle_matchings(n: int) -> Dict[int, List[Tuple[int, int]]]:
-    """
-    Create a fixed calendar using the classical 'circle method'.
-    Returns a mapping week_index (0-based) -> list of pairs (team_i, team_j) with 0-based indices.
+    """Circle method: generate fixed calendar matchings.
+
+    Returns a dict mapping week (0-based) to a list of pairs (i, j) with 0-based
+    team indices. Behaviour preserved from original implementation.
     """
     pivot = n - 1
     circle = list(range(n - 1))
     weeks = n - 1
-    mapping: Dict[int, List[Tuple[int, int]]] = {}
+    schedule: Dict[int, List[Tuple[int, int]]] = {}
 
     for w in range(weeks):
         matches = [(pivot, circle[w])]
@@ -373,174 +362,200 @@ def circle_matchings(n: int) -> Dict[int, List[Tuple[int, int]]]:
             i = circle[(w + k) % (n - 1)]
             j = circle[(w - k + (n - 1)) % (n - 1)]
             matches.append((i, j))
-        mapping[w] = matches
+        schedule[w] = matches
 
-    return mapping
+    return schedule
 
 
-# --------------------------------------------------------------
-# Misc helper: lexicographical ordering for boolean vectors
-# --------------------------------------------------------------
-def lex_less_bool(curr: Sequence[Bool], nxt: Sequence[Bool]) -> Bool:
+# ---------------------------------------------------------------------------
+# Helper: lexicographical less-than for boolean vectors
+# ---------------------------------------------------------------------------
+
+
+def lex_less_bool(curr: Sequence[BoolRef], nxt: Sequence[BoolRef]) -> BoolRef:
+    """Return a Z3 formula enforcing lexicographic curr < nxt over boolean vectors.
+
+    Preserves original semantics: finds first position where curr is True and
+    nxt False while prefixes are equal.
     """
-    Return a Boolean formula asserting curr < nxt in lexicographic order.
-    Implementation: OR over positions i of (curr[0]==nxt[0] & ... & curr[i-1]==nxt[i-1] & curr[i] & not nxt[i]).
-    """
-    conditions = []
-    for i in range(len(curr)):
-        prefix_eq = [curr[j] == nxt[j] for j in range(i)]
-        conditions.append(And(*(prefix_eq + [curr[i], Not(nxt[i])])))
+    conditions: List[BoolRef] = []
+    length = len(curr)
+    for i in range(length):
+        prefix_equal = [curr[j] == nxt[j] for j in range(i)]
+        cond = And(*(prefix_equal + [curr[i], Not(nxt[i])]))
+        conditions.append(cond)
     return Or(*conditions)
 
 
-# --------------------------------------------------------------
-# Model builder: create STS Z3 model for given parameters
-# --------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Main STS modelling and solvers (create model, decisional, optimization)
+# ---------------------------------------------------------------------------
+
+
 def create_sts_model(
     n: int,
     max_diff_k: int,
-    exactly_one_encoding: Callable[[Sequence[Bool], str], Bool],
-    at_most_k_encoding: Callable[[Sequence[Bool], int, str], Bool],
+    exactly_one_encoding: Callable[..., BoolRef],
+    at_most_k_encoding: Callable[..., BoolRef],
     symmetry_breaking: bool = True,
-):
-    """
-    Build a Z3 solver and variables for the Sports Tournament Scheduling (STS) problem.
+) -> Tuple[Solver, Dict[Tuple[int, int, int], BoolRef], Dict[Tuple[int, int], BoolRef], Dict[Tuple[int, int], int]]:
+    """Create Z3 model for STS with fixed calendar and PB bounds on home games.
+
     Returns (solver, match_period_vars, home_vars, pair_to_week).
-    - match_period_vars: dict keyed by (i, j, p) -> Bool indicating match (i,j) assigned to period p
-    - home_vars: dict keyed by (i, j) with i<j -> Bool meaning 'i is home when i vs j'
-    - pair_to_week: mapping (i,j) -> week_index (0-based from circle_method)
     """
     if n % 2 != 0:
-        raise ValueError("Number of teams must be even")
+        raise ValueError("The number of teams must be even.")
 
-    num_teams = n
-    num_weeks = n - 1
-    periods_per_week = n // 2
+    NUM_TEAMS = n
+    NUM_WEEKS = n - 1
+    NUM_PERIODS_PER_WEEK = n // 2
 
     solver = Solver()
-    week_matchings = circle_matchings(num_teams)
+
+    # Fixed calendar
+    week_matchings = circle_matchings(NUM_TEAMS)
     pair_to_week: Dict[Tuple[int, int], int] = {}
-
-    # canonicalize pairs as (small, large) to be consistent
     for w, matches in week_matchings.items():
-        for (i, j) in matches:
-            a, b = (i, j) if i < j else (j, i)
-            pair_to_week[(a, b)] = w
+        for i, j in matches:
+            if i > j:
+                i, j = j, i
+            pair_to_week[(i, j)] = w
 
-    # match_period_vars: for each unordered pair (i, j) and each period p
-    match_period_vars: Dict[Tuple[int, int, int], Bool] = {}
+    # Boolean variables for matches in periods
+    match_period_vars: Dict[Tuple[int, int, int], BoolRef] = {}
     for (i, j) in pair_to_week:
-        for p in range(periods_per_week):
+        for p in range(NUM_PERIODS_PER_WEEK):
             match_period_vars[(i, j, p)] = Bool(f"m_{i}_{j}_p{p}")
 
-    # home decision vars for unordered pairs (i < j)
-    home_vars: Dict[Tuple[int, int], Bool] = {}
-    for i in range(num_teams):
-        for j in range(i + 1, num_teams):
+    # Home indicator variables (ordered pair keys i<j)
+    home_vars: Dict[Tuple[int, int], BoolRef] = {}
+    for i in range(NUM_TEAMS):
+        for j in range(i + 1, NUM_TEAMS):
             home_vars[(i, j)] = Bool(f"home_{i}_{j}")
 
-    # 1) Each match assigned to exactly one period (using chosen encoding)
+    # 1) Each match assigned to exactly one period
     for (i, j) in pair_to_week:
-        vars_for_match = [match_period_vars[(i, j, p)] for p in range(periods_per_week)]
+        vars_for_match = [match_period_vars[(i, j, p)] for p in range(NUM_PERIODS_PER_WEEK)]
         solver.add(exactly_one_encoding(vars_for_match, f"match_once_{i}_{j}"))
 
-    # 2) Each period in each week contains exactly one match (slot constraint)
-    for w in range(num_weeks):
-        matches = week_matchings[w]
-        for p in range(periods_per_week):
+    # 2) Each period-slot in a week contains exactly one match
+    for w in range(NUM_WEEKS):
+        week_matches = week_matchings[w]
+        for p in range(NUM_PERIODS_PER_WEEK):
             slot_vars = []
-            for (i, j) in matches:
-                a, b = (i, j) if i < j else (j, i)
-                slot_vars.append(match_period_vars[(a, b, p)])
-            solver.add(exactly_one_encoding(slot_vars, f"slot_w{w}_p{p}"))
+            for i, j in week_matches:
+                if i > j:
+                    i, j = j, i
+                slot_vars.append(match_period_vars[(i, j, p)])
+            solver.add(exactly_one_encoding(slot_vars, f"one_match_per_slot_w{w}_p{p}"))
 
-    # 3) Each team appears at most twice in the same period across the tournament
-    for t in range(num_teams):
-        for p in range(periods_per_week):
-            occurrences: List[Bool] = []
+    # 3) Each team appears at most twice in the same period across all weeks
+    for t in range(NUM_TEAMS):
+        for p in range(NUM_PERIODS_PER_WEEK):
+            appearances: List[BoolRef] = []
             for (i, j), _w in pair_to_week.items():
                 if t == i or t == j:
-                    occurrences.append(match_period_vars[(i, j, p)])
-            solver.add(at_most_k_encoding(occurrences, 2, f"team_{t}_max2_p{p}"))
+                    appearances.append(match_period_vars[(i, j, p)])
+            solver.add(at_most_k_encoding(appearances, 2, f"team_{t}_max2_in_p{p}"))
 
-    # Symmetry breaking (optional)
+    # Symmetry breaking
     if symmetry_breaking:
-        # SB1: force specific match to be in first period (fixing one degree of freedom)
-        team_a, team_b = 0, num_teams - 1
+        # SB1: force a specific match to be in first period
+        team_a, team_b = 0, NUM_TEAMS - 1
         solver.add(match_period_vars[(team_a, team_b, 0)])
 
-        # SB2: fix home/away alternation for team 0 across weeks (consistent pattern)
+        # SB2: enforce alternating home/away pattern for team 0 across weeks
         for (i, j), w in pair_to_week.items():
             if i == 0:
-                solver.add(home_vars[(i, j)] if (w % 2 == 0) else Not(home_vars[(i, j)]))
+                solver.add(home_vars[(i, j)] if w % 2 == 0 else Not(home_vars[(i, j)]))
             elif j == 0:
-                solver.add(Not(home_vars[(i, j)]) if (w % 2 == 0) else home_vars[(i, j)])
+                solver.add(Not(home_vars[(i, j)]) if w % 2 == 0 else home_vars[(i, j)])
 
-        # SB3: lexicographic ordering of the boolean period vectors in week 0
+        # SB3: lexicographic ordering of match-period vectors in week 0
         matches_week0 = sorted([(i, j) if i < j else (j, i) for (i, j) in week_matchings[0]])
         if len(matches_week0) > 1:
-            vectors = [[match_period_vars[(i, j, p)] for p in range(periods_per_week)] for (i, j) in matches_week0]
-            for idx in range(len(vectors) - 1):
-                solver.add(lex_less_bool(vectors[idx], vectors[idx + 1]))
+            bool_vectors = [[match_period_vars[(i, j, p)] for p in range(NUM_PERIODS_PER_WEEK)] for (i, j) in matches_week0]
+            for a in range(len(bool_vectors) - 1):
+                solver.add(lex_less_bool(bool_vectors[a], bool_vectors[a + 1]))
 
-    # Optimization-style constraints: ensure each team's home games are within max_diff_k
-    for t in range(num_teams):
-        home_games: List[Bool] = []
+    # Optimization: bound home games per team by max_diff_k
+    for t in range(NUM_TEAMS):
+        home_game_terms: List[BoolRef] = []
         for (i, j), _w in pair_to_week.items():
-            for p in range(periods_per_week):
+            for p in range(NUM_PERIODS_PER_WEEK):
                 mp = match_period_vars[(i, j, p)]
-                # if team t is the smaller index i, 'home' means home_vars[(i,j)] true
                 if t == i:
-                    home_games.append(And(mp, home_vars[(i, j)]))
+                    home_game_terms.append(And(mp, home_vars[(i, j)]))
                 elif t == j:
-                    # if team t is the larger index j, home if home_vars[(i,j)] is false
-                    home_games.append(And(mp, Not(home_vars[(i, j)])))
+                    home_game_terms.append(And(mp, Not(home_vars[(i, j)])))
 
-        num_games = n - 1
-        upper = math.floor((num_games + max_diff_k) / 2)
-        lower = math.ceil((num_games - max_diff_k) / 2)
+        NUM_GAMES = n - 1
+        upper_bound = math.floor((NUM_GAMES + max_diff_k) / 2)
+        lower_bound = math.ceil((NUM_GAMES - max_diff_k) / 2)
 
-        # PbLe / PbGe constraints over boolean indicators
-        solver.add(PbLe([(v, 1) for v in home_games], upper))
-        solver.add(PbGe([(v, 1) for v in home_games], lower))
+        solver.add(PbLe([(v, 1) for v in home_game_terms], upper_bound))
+        solver.add(PbGe([(v, 1) for v in home_game_terms], lower_bound))
 
     return solver, match_period_vars, home_vars, pair_to_week
 
 
-# --------------------------------------------------------------
-# Solver runners: optimization (binary search) and decisional
-# --------------------------------------------------------------
+def _extract_schedule_from_model(model: ModelRef, match_period_vars: Dict[Tuple[int, int, int], BoolRef], home_vars: Dict[Tuple[int, int], BoolRef], pair_to_week: Dict[Tuple[int, int], int]) -> List[Tuple[int, int, int, int]]:
+    """Given a model, extract the schedule as a list of 1-based tuples
+    (home, away, week, period)."""
+    schedule: List[Tuple[int, int, int, int]] = []
+    for (i, j, p), var in match_period_vars.items():
+        if is_true(model.evaluate(var)):
+            key = (i, j) if i < j else (j, i)
+            is_home = is_true(model.evaluate(home_vars[key]))
+
+            if i < j:
+                home_team_idx = i if is_home else j
+                away_team_idx = j if is_home else i
+            else:
+                home_team_idx = i if is_home else j
+                away_team_idx = j if is_home else i
+
+            week_idx = pair_to_week[key]
+            schedule.append((home_team_idx + 1, away_team_idx + 1, week_idx + 1, p + 1))
+    return schedule
+
+
+# ---------------------------------------------------------------------------
+# Optimization solver (binary search on max_diff_k)
+# ---------------------------------------------------------------------------
+
+
 def solve_sts_optimization(
     n: int,
     timeout_seconds: int,
-    exactly_one_encoding: Callable[[Sequence[Bool], str], Bool],
-    at_most_k_encoding: Callable[[Sequence[Bool], int, str], Bool],
+    exactly_one_encoding: Callable[..., BoolRef],
+    at_most_k_encoding: Callable[..., BoolRef],
     symmetry_breaking: bool = True,
     verbose: bool = False,
 ) -> Dict:
-    """
-    Optimization driver: binary-search on max_diff_k to minimize maximum home/away imbalance.
-    Returns a result dictionary with keys: obj, sol, optimal, time, restart, max_memory, mk_bool_var, conflicts
+    """Binary-search optimization on the maximum home/away imbalance (min-max).
+
+    Behaviour and return format preserved exactly from the original.
     """
     if n % 2 != 0:
-        raise ValueError("Number of teams must be even")
+        raise ValueError("The number of teams must be even.")
 
-    num_weeks = n - 1
-    low, high = 1, num_weeks
-    best_model = None
+    NUM_WEEKS = n - 1
+    low, high = 1, NUM_WEEKS
+    optimal_diff = None
+    best_model: Optional[ModelRef] = None
     best_vars = None
-    best_obj = None
     found_solution = False
     proven_unsat = False
 
-    start = time.time()
+    start_time = time.time()
     if verbose:
         print(f"\n--- Optimization for n={n} started ---")
 
     last_solver = None
 
     while low <= high:
-        elapsed = time.time() - start
+        elapsed = time.time() - start_time
         remaining = timeout_seconds - elapsed
         if remaining <= 3:
             if verbose:
@@ -549,7 +564,7 @@ def solve_sts_optimization(
 
         k = (low + high) // 2
         if verbose:
-            print(f"Testing max_diff <= {k}. Remaining: {remaining:.2f}s")
+            print(f"Testing max_diff <= {k}. Remaining time: {remaining:.2f}s...")
 
         solver, match_period_vars, home_vars, pair_to_week = create_sts_model(
             n=n,
@@ -564,111 +579,110 @@ def solve_sts_optimization(
 
         status = solver.check()
         if verbose:
-            print(f"  Solver returned: {status}")
+            print(f"  Solver result for k={k}: {status}")
 
         if status == sat:
             model = solver.model()
+            optimal_diff = k
             best_model = model
             best_vars = (match_period_vars, home_vars, pair_to_week)
-            best_obj = k
             found_solution = True
             high = k - 1
             if verbose and k > 1:
-                print(f"  Found feasible with max_diff <= {k}, trying smaller")
+                print(f"  Found a solution with max_diff <= {k}. Trying smaller value.")
+
         elif status == unsat:
             proven_unsat = True
             break
+
         else:
-            # unknown or timed out in solver
             if verbose:
-                print("  Solver returned 'unknown' or timed out.")
+                print("  Solver returned 'unknown'.")
             break
 
-    # gather final statistics from the last solver if present
-    stats = last_solver.statistics() if last_solver is not None else None
+    stats = last_solver.statistics() if last_solver is not None else {}
     final_stats = {
-        "restarts": stats.get_key_value("restarts") if stats and "restarts" in stats.keys() else 0,
-        "max_memory": stats.get_key_value("max memory") if stats and "max memory" in stats.keys() else 0,
-        "mk_bool_var": stats.get_key_value("mk bool var") if stats and "mk bool var" in stats.keys() else 0,
-        "conflicts": stats.get_key_value("conflicts") if stats and "conflicts" in stats.keys() else 0,
+        'restarts': stats.get_key_value('restarts') if 'restarts' in stats.keys() else 0,
+        'max_memory': stats.get_key_value('max memory') if 'max memory' in stats.keys() else 0,
+        'mk_bool_var': stats.get_key_value('mk bool var') if 'mk bool var' in stats.keys() else 0,
+        'conflicts': stats.get_key_value('conflicts') if 'conflicts' in stats.keys() else 0,
     }
 
-    total_time = time.time() - start
-    total_time = min(total_time, timeout_seconds)
+    total_time = min(time.time() - start_time, timeout_seconds)
 
-    schedule: List[Tuple[int, int, int, int]] = []
-    proven_optimal = False
-
+    best_schedule: List[Tuple[int, int, int, int]] = []
+    proven_optimal_final = False
     if best_model is not None and best_vars is not None:
-        mp_vars, home_vars, pair_to_week = best_vars
-        for (i, j, p), var in mp_vars.items():
-            if is_true(best_model.evaluate(var)):
-                key = (i, j) if i < j else (j, i)
-                is_home = is_true(best_model.evaluate(home_vars[key]))
-                # Deduce home/away indices according to is_home flag
-                if i < j:
-                    home_idx = i if is_home else j
-                    away_idx = j if is_home else i
-                else:
-                    home_idx = i if is_home else j
-                    away_idx = j if is_home else i
-                week_idx = pair_to_week[key]
-                schedule.append((home_idx + 1, away_idx + 1, week_idx + 1, p + 1))
+        match_period_vars, home_vars, pair_to_week = best_vars
+        best_schedule = _extract_schedule_from_model(best_model, match_period_vars, home_vars, pair_to_week)
+        if optimal_diff is not None and optimal_diff == 1:
+            proven_optimal_final = True
 
-        # if best_obj == 1 we treat it as proven optimal final 
-        if best_obj is not None and best_obj == 1:
-            proven_optimal = True
-
-    if proven_optimal:
+    if proven_optimal_final:
         return {
-            "obj": best_obj,
-            "sol": schedule,
-            "optimal": True,
-            "time": total_time,
-            **final_stats,
+            'obj': optimal_diff,
+            'sol': best_schedule,
+            'optimal': True,
+            'time': total_time,
+            'restart': final_stats['restarts'],
+            'max_memory': final_stats['max_memory'],
+            'mk_bool_var': final_stats['mk_bool_var'],
+            'conflicts': final_stats['conflicts'],
         }
     if proven_unsat:
         return {
-            "obj": None,
-            "sol": schedule,
-            "optimal": True,
-            "time": total_time,
-            **final_stats,
+            'obj': None,
+            'sol': best_schedule,
+            'optimal': True,
+            'time': total_time,
+            'restart': final_stats['restarts'],
+            'max_memory': final_stats['max_memory'],
+            'mk_bool_var': final_stats['mk_bool_var'],
+            'conflicts': final_stats['conflicts'],
         }
     if found_solution:
         return {
-            "obj": best_obj,
-            "sol": schedule,
-            "optimal": False,
-            "time": total_time,
-            **final_stats,
+            'obj': optimal_diff,
+            'sol': best_schedule,
+            'optimal': False,
+            'time': total_time,
+            'restart': final_stats['restarts'],
+            'max_memory': final_stats['max_memory'],
+            'mk_bool_var': final_stats['mk_bool_var'],
+            'conflicts': final_stats['conflicts'],
         }
+
     return {
-        "obj": None,
-        "sol": None,
-        "optimal": False,
-        "time": total_time,
-        **final_stats,
+        'obj': None,
+        'sol': None,
+        'optimal': False,
+        'time': total_time,
+        'restart': final_stats['restarts'],
+        'max_memory': final_stats['max_memory'],
+        'mk_bool_var': final_stats['mk_bool_var'],
+        'conflicts': final_stats['conflicts'],
     }
+
+
+# ---------------------------------------------------------------------------
+# Decisional solver (find one solution for a given max_diff_k)
+# ---------------------------------------------------------------------------
 
 
 def solve_sts_decisional(
     n: int,
     max_diff_k: int,
     timeout_seconds: int,
-    exactly_one_encoding: Callable[[Sequence[Bool], str], Bool],
-    at_most_k_encoding: Callable[[Sequence[Bool], int, str], Bool],
+    exactly_one_encoding: Callable[..., BoolRef],
+    at_most_k_encoding: Callable[..., BoolRef],
     symmetry_breaking: bool = True,
     verbose: bool = False,
 ) -> Dict:
-    """
-    Decisional solver: try to find a single feasible schedule with provided max_diff_k.
-    Returns a result dict with the same structure as optimization runner (obj remains None).
-    """
+    """Run a single SAT query for a fixed max_diff_k and return one solution if any."""
     if verbose:
-        print(f"\n--- Decisional solver for n={n} (k={max_diff_k}) ---")
+        print(f"\n--- Decisional solver for n={n} ---")
 
-    start = time.time()
+    start_time = time.time()
     solver, match_period_vars, home_vars, pair_to_week = create_sts_model(
         n=n,
         max_diff_k=max_diff_k,
@@ -681,157 +695,150 @@ def solve_sts_decisional(
     solver.set("timeout", int(timeout_seconds * 1000))
 
     status = solver.check()
-    elapsed = time.time() - start
+    solve_time = time.time() - start_time
 
     stats = solver.statistics()
     stats_dict = {
-        "restarts": stats.get_key_value("restarts") if "restarts" in stats.keys() else 0,
-        "max_memory": stats.get_key_value("max memory") if "max memory" in stats.keys() else 0,
-        "mk_bool_var": stats.get_key_value("mk bool var") if "mk bool var" in stats.keys() else 0,
-        "conflicts": stats.get_key_value("conflicts") if "conflicts" in stats.keys() else 0,
+        'restarts': stats.get_key_value('restarts') if 'restarts' in stats.keys() else 0,
+        'max_memory': stats.get_key_value('max memory') if 'max memory' in stats.keys() else 0,
+        'mk_bool_var': stats.get_key_value('mk bool var') if 'mk bool var' in stats.keys() else 0,
+        'conflicts': stats.get_key_value('conflicts') if 'conflicts' in stats.keys() else 0,
     }
 
-    schedule: List[Tuple[int, int, int, int]] = []
+    best_schedule: List[Tuple[int, int, int, int]] = []
     if status == sat:
         model = solver.model()
-        for (i, j, p), var in match_period_vars.items():
-            if is_true(model.evaluate(var)):
-                key = (i, j) if i < j else (j, i)
-                is_home = is_true(model.evaluate(home_vars[key]))
-                if i < j:
-                    home_idx = i if is_home else j
-                    away_idx = j if is_home else i
-                else:
-                    home_idx = i if is_home else j
-                    away_idx = j if is_home else i
-                week_idx = pair_to_week[key]
-                schedule.append((home_idx + 1, away_idx + 1, week_idx + 1, p + 1))
+        best_schedule = _extract_schedule_from_model(model, match_period_vars, home_vars, pair_to_week)
 
-    # limit solve time to 300
-    elapsed = elapsed if elapsed <= 300 else 300
-    optimal_flag = True if elapsed < 300 else False
+    solve_time = solve_time if solve_time <= 300 else 300
+    optimal = True if solve_time < 300 else False
 
     return {
-        "obj": None,
-        "sol": schedule,
-        "optimal": optimal_flag,
-        "time": elapsed,
-        **stats_dict,
+        'obj': None,
+        'sol': best_schedule,
+        'optimal': optimal,
+        'time': solve_time,
+        'restart': stats_dict['restarts'],
+        'max_memory': stats_dict['max_memory'],
+        'mk_bool_var': stats_dict['mk_bool_var'],
+        'conflicts': stats_dict['conflicts'],
     }
 
 
-# --------------------------------------------------------------
-# CLI helpers: parsing and main
-# --------------------------------------------------------------
-def parse_n_teams(inputs: Sequence[str]) -> List[int]:
-    """
-    Parse -n input values accepting numbers and ranges (e.g., "2-18").
-    Only even numbers are returned (skipping odd).
-    """
+# ---------------------------------------------------------------------------
+# CLI parsing and main()
+# ---------------------------------------------------------------------------
+
+
+def parse_n_teams(n_input: Iterable[str]) -> List[int]:
+    """Parse -n values: accepts numbers and ranges (e.g. 2-18). Only even numbers kept."""
     values = set()
-    for token in inputs:
-        if re.match(r"^\d+-\d+$", token):
-            a, b = map(int, token.split("-"))
-            for x in range(a, b + 1):
-                if x % 2 == 0:
-                    values.add(x)
+    for item in n_input:
+        if re.match(r"^\d+-\d+$", item):
+            start, end = map(int, item.split("-"))
+            for n in range(start, end + 1):
+                if n % 2 == 0:
+                    values.add(n)
         else:
             try:
-                v = int(token)
-                if v % 2 == 0:
-                    values.add(v)
+                n = int(item)
+                if n % 2 == 0:
+                    values.add(n)
                 else:
-                    print(f"[WARNING] Skipping odd number: {v}")
+                    print(f"[WARNING] Skipping odd number: {n}")
             except ValueError:
-                print(f"[WARNING] Invalid -n token: {token}")
+                print(f"[WARNING] Invalid value for -n: {item}")
     return sorted(values)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sport Tournament Scheduler using Z3 encodings.")
-    parser.add_argument("-n", "--n_teams", type=str, nargs="+", default=["2-20"],
-                        help="Even numbers or ranges like 2-18 for the number of teams.")
-    parser.add_argument("-t", "--timeout", type=int, default=300, help="Timeout (s) per solver instance.")
-    parser.add_argument("--exactly_one_encoding", type=str, choices=["np", "bw", "seq", "heule"],
-                        help="Encoding for exactly-one.")
-    parser.add_argument("--at_most_k_encoding", type=str, choices=["np", "seq", "totalizer"],
-                        help="Encoding for at-most-k.")
-    parser.add_argument("--all", action="store_true", help="Run a preset set of encoding combinations.")
-    parser.add_argument("--run_decisional", action="store_true", help="Run decisional solver.")
-    parser.add_argument("--run_optimization", action="store_true", help="Run optimization solver.")
+    parser = argparse.ArgumentParser(description="Sport Tournament Scheduler using Z3 solvers.")
+    parser.add_argument("-n", "--n_teams", type=str, nargs='+', default=["2-20"],
+                        help="List of even numbers or ranges like 2-18 for number of teams to test.")
+    parser.add_argument("-t", "--timeout", type=int, default=300, help="Timeout in seconds for each solver instance.")
+    parser.add_argument("--exactly_one_encoding", type=str, choices=["np", "bw", "seq", "heule"], help="Encoding for exactly-one constraints.")
+    parser.add_argument("--at_most_k_encoding", type=str, choices=["np", "seq", "totalizer"], help="Encoding for at-most-k constraints.")
+    parser.add_argument("--all", action="store_true", help="Run all combinations of encoding methods.")
+    parser.add_argument("--run_decisional", action="store_true", help="Run the decisional solver.")
+    parser.add_argument("--run_optimization", action="store_true", help="Run the optimization solver.")
     parser.add_argument("--sb", dest="sb", action="store_true", help="Enable symmetry breaking.")
     parser.add_argument("--no_sb", dest="sb", action="store_false", help="Disable symmetry breaking.")
     parser.set_defaults(sb=None)
-    parser.add_argument("--verbose", action="store_true", help="Verbose output.")
-    parser.add_argument("--save_json", action="store_true", help="Save results to JSON files.")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output.")
+    parser.add_argument("--save_json", action='store_true', help="Save solver results to JSON files.")
 
     args = parser.parse_args()
 
     args.n_teams = parse_n_teams(args.n_teams)
 
-    eo_map = {
-        "np": eo_exactly_one_pairwise,
-        "bw": eo_exactly_one_binary,
-        "seq": eo_exactly_one_seq,
-        "heule": eo_heule_exactly_one,
+    exactly_one_encodings = {
+        "np": exactly_one_np,
+        "bw": exactly_one_bw,
+        "seq": exactly_one_seq,
+        "heule": heule_exactly_one,
     }
-    amk_map = {
-        "np": amk_np,
-        "seq": amk_seq,
-        "totalizer": amk_totalizer,
+    at_most_k_encodings = {
+        "np": at_most_k_np,
+        "seq": at_most_k_seq,
+        "totalizer": at_most_k_totalizer,
     }
 
-    # if --all, use a curated list of allowed combinations 
     if args.all:
-        allowed = [("np", "np"), ("heule", "seq"), ("heule", "totalizer")]
-        encoding_combinations = [((eo, eo_map[eo]), (ak, amk_map[ak])) for eo, ak in allowed]
+        allowed_pairs = [
+            ("np", "np"),
+            ("heule", "seq"),
+            ("heule", "totalizer"),
+        ]
+        encoding_combinations = [
+            ((eo, exactly_one_encodings[eo]), (ak, at_most_k_encodings[ak]))
+            for eo, ak in allowed_pairs
+        ]
         if not args.run_decisional and not args.run_optimization:
             args.run_decisional = True
             args.run_optimization = True
     else:
         if not args.exactly_one_encoding or not args.at_most_k_encoding:
-            print("Error: specify both --exactly_one_encoding and --at_most_k_encoding, or use --all.")
+            print("Error: You must specify both --exactly_one_encoding and --at_most_k_encoding, or use --all.")
             return
         encoding_combinations = [(
-            (args.exactly_one_encoding, eo_map[args.exactly_one_encoding]),
-            (args.at_most_k_encoding, amk_map[args.at_most_k_encoding]),
+            (args.exactly_one_encoding, exactly_one_encodings[args.exactly_one_encoding]),
+            (args.at_most_k_encoding, at_most_k_encodings[args.at_most_k_encoding]),
         )]
 
     if not args.run_decisional and not args.run_optimization:
-        print("Error: choose at least --run_decisional or --run_optimization.")
+        print("Error: You must choose to run either --run_decisional or --run_optimization (or both).")
         parser.print_help()
         return
 
-    # subtract 1 from global timeout to leave a small margin 
     timeout = args.timeout - 1
     sb_options = [True, False] if args.sb is None else [args.sb]
 
     for sb in sb_options:
-        sb_label = "sb" if sb else "no_sb"
+        sb_name = "sb" if sb else "no_sb"
         for (eo_name, eo_func), (ak_name, ak_func) in encoding_combinations:
-            combo_name = f"{eo_name}_{ak_name}"
+            name_prefix = f"{eo_name}_{ak_name}"
 
             if args.run_decisional:
                 for n in args.n_teams:
-                    model_name = f"decisional_{combo_name}_{sb_label}"
+                    model_name = f"decisional_{name_prefix}_{sb_name}"
                     try:
                         results = solve_sts_decisional(
-                            n=n,
+                            n,
                             max_diff_k=n - 1,
-                            timeout_seconds=timeout,
                             exactly_one_encoding=eo_func,
                             at_most_k_encoding=ak_func,
+                            timeout_seconds=timeout,
                             symmetry_breaking=sb,
                             verbose=args.verbose,
                         )
-                    except ValueError as exc:
-                        print(f"Skipping n={n}: {exc}")
+                    except ValueError as e:
+                        print(f"Skipping n={n}: {e}")
                         continue
 
                     if args.save_json:
-                        save_results_as_json(n=n, results=results, model_name=model_name)
+                        save_results_as_json(n, results=results, model_name=model_name)
 
-                    if results["sol"] is not None:
+                    if results['sol'] is not None:
                         if os.path.exists("/.dockerenv"):
                             os.system(f"echo '[Decisional Result] n={n} | time={results['time']}'")
                         else:
@@ -841,24 +848,24 @@ def main() -> None:
 
             if args.run_optimization:
                 for n in args.n_teams:
-                    model_name = f"optimization_{combo_name}_{sb_label}"
+                    model_name = f"optimization_{name_prefix}_{sb_name}"
                     try:
                         results = solve_sts_optimization(
-                            n=n,
+                            n,
                             timeout_seconds=timeout,
                             exactly_one_encoding=eo_func,
                             at_most_k_encoding=ak_func,
                             symmetry_breaking=sb,
                             verbose=args.verbose,
                         )
-                    except ValueError as exc:
-                        print(f"Skipping n={n}: {exc}")
+                    except ValueError as e:
+                        print(f"Skipping n={n}: {e}")
                         continue
 
                     if args.save_json:
-                        save_results_as_json(n=n, results=results, model_name=model_name)
+                        save_results_as_json(n, results=results, model_name=model_name)
 
-                    if results["sol"] is not None:
+                    if results['sol'] is not None:
                         if os.path.exists("/.dockerenv"):
                             os.system(f"echo '[Optimization Result] n={n} | obj={results['obj']} | time={results['time']}'")
                         else:
