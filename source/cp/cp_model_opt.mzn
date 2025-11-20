@@ -5,36 +5,31 @@ constraint n mod 2 = 0;
 
 int: weeks = n - 1;
 int: periods = n div 2;
-int: N1 = n - 1; 
+int: N1 = n - 1;
 
 set of int: Teams = 1..n;
 set of int: Weeks = 1..weeks;
 set of int: Periods = 1..periods;
 
-% Canonical Schedule
-function int: team_at_pos(int: pos, int: w) = 
-    ((pos + w - 2) mod N1) + 1;
+function int: get_k(int: t, int: w) = 
+    (((t - w) mod N1 + N1) mod N1) + 1;
 
-function int: get_opponent_for_team(int: t, int: w) = 
-    let {
-        int: t_pos = if t == n then -1 
-                     else min([ i | i in 1..N1 where team_at_pos(i, w) == t]) 
-                     endif;
-    } in
-    if t_pos == -1 then 
-        team_at_pos(1, w)
-    elseif t_pos == 1 then
-        n
-    else
-        team_at_pos(n - t_pos + 1, w)
-    endif;
+function int: get_team_at_k(int: k, int: w) = 
+    ((k + w - 2) mod N1) + 1;
 
 array[Teams, Weeks] of int: opponent = array2d(Teams, Weeks, [
-    get_opponent_for_team(t, w) | t in Teams, w in Weeks
+    if t == n then
+        get_team_at_k(1, w)
+    else
+        let { int: k = get_k(t, w); } in
+        if k == 1 then n else get_team_at_k(n - k + 1, w) endif
+    endif
+    | t in Teams, w in Weeks
 ]);
 
 array[Teams, Weeks] of var Periods: period;
 array[Teams, Weeks] of var bool: is_home;
+array[Teams] of var 0..weeks: home_count = [ sum(w in Weeks)(bool2int(is_home[t,w])) | t in Teams ];
 
 % Each game period is shared by both teams
 constraint forall(t in Teams, w in Weeks)(
@@ -62,16 +57,7 @@ constraint forall(t in Teams, w in Weeks)(
     is_home[t,w] != is_home[opponent[t,w], w]
 );
 
-array[Teams] of var int: home_count = [
-    sum(w in Weeks)(bool2int(is_home[t,w])) | t in Teams
-];
-
-
-constraint forall(t in Teams)(
-    abs(2 * home_count[t] - weeks) = 1
-);
-
-% % SYMMETRY BREAKING
+% SYMMETRY BREAKING
 constraint is_home[1,1] = true;
 
 constraint period[n, 1] = 1; 
@@ -79,20 +65,27 @@ constraint forall(i in 2..periods)(
     period[i, 1] = i
 );
 
+% Optimization 
+var int: objective;
+constraint objective = sum(t in Teams)( abs(2 * home_count[t] - weeks) );
+constraint objective >= (if weeks mod 2 !=0 then n else 0 endif);
+
 solve :: seq_search([
     int_search(
         [ period[t,w] | w in Weeks, t in Teams where t < opponent[t,w] ],
         first_fail,     
-        indomain_max,   
+        indomain_random,   
         complete
     ),
     int_search(
         [ is_home[t,w] | w in Weeks, t in Teams where t < opponent[t,w] ],
         first_fail, 
-        indomain_max, 
+        indomain_random, 
         complete
     )
-]) satisfy;
+])
+:: restart_geometric(1.2, 300)
+minimize objective;
 
 
 array[Periods, Weeks, 1..2] of var Teams: games;
@@ -118,5 +111,6 @@ output [
         ]) ++ "]"
         ++ if p < periods then ",\n" else "\n" endif
         | p in Periods
-    ]) ++ "\n]\n"
+    ]) ++ "\n]\n" ++
+    "obj = " ++ show(objective) ++ "\n" 
 ];
