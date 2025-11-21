@@ -1,3 +1,4 @@
+import math
 import subprocess
 import time
 from pysmt.shortcuts import Solver, Symbol, Not, Plus, Ite, Int, Equals
@@ -276,7 +277,8 @@ def generate_smtfile_CM_UF(n, filename="schedule.smt2"):
 
 
 # Models exploiting Kirkman's algorithm with symmetry breaking (2) - QF_UFLIA logic
-def generate_smtfile_CM_UF_SB(n, filename="schedule.smt2"):
+def generate_decisional_model(n, filename="schedule.smt2"):
+
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even!")
@@ -341,6 +343,116 @@ def generate_smtfile_CM_UF_SB(n, filename="schedule.smt2"):
             for (t1, t2) in week:
                 for p in range(1, periods + 1):
                     f.write(f"(get-value (m_{t1}_{t2}_p{p}))\n")
+        f.close()
+
+
+# Models exploiting Kirkman's algorithm with symmetry breaking and optimality - QF_UFLIA logic
+def generate_optimal_model(n, filename="schedule.smt2"):
+
+    # Check if the number of teams is even
+    if n % 2 != 0:
+        raise ValueError("n must be even!")
+
+    weeks = n - 1
+    periods = n // 2
+    team_matches = dict((i, list()) for i in range(1, n + 1))
+    # a dictionary where the keys are the teams and the values are the matches of that team
+
+    schedule = kirkman_tournament(n)
+
+    with open(filename, "w") as f:
+        f.write("(set-option :produce-models true)\n")
+        f.write("(set-option :opt.priority box)\n")
+        f.write("(set-logic QF_UFLIA)\n")  # Set the theory
+
+        # Variables Definition
+        for week in schedule:
+            for (t1, t2) in week:
+                team_matches[t1].append((t1, t2))
+                team_matches[t2].append((t1, t2))
+                for i in range(1, periods + 1):
+                    f.write(f"(declare-fun m_{t1}_{t2}_p{i} () Bool)\n")
+
+        for week in schedule:
+            for (t1, t2) in week:
+                f.write(f"(declare-fun h_{t1}_{t2} () Bool)\n")
+
+        for t in range(1, n + 1):
+            f.write(f"(declare-fun diff_{t} () Int)\n")
+
+        # Fix First Week (Symmetry Breaking)
+        p = 1
+        for (t1, t2) in schedule[0]:
+            for i in range(1, periods + 1):
+                if i == p:
+                    f.write(f"(assert m_{t1}_{t2}_p{i})\n")
+                else:
+                    f.write(f"(assert (not m_{t1}_{t2}_p{i}))\n")
+            p = p + 1
+
+        # Additional Constraint N. 1: Each match assigned to exactly one period
+        for week in schedule:
+            for (t1, t2) in week:
+                f.write("(assert (= 1 (+")
+                for i in range(1, periods + 1):
+                    f.write(f" (ite m_{t1}_{t2}_p{i} 1 0)")
+                f.write(")))\n")
+        f.write("\n")
+
+        # Additional Constraint N. 2: Each period per week holds exactly one match
+        for week in schedule:
+            for i in range(1, periods + 1):
+                f.write("(assert (= 1 (+")
+                for (t1, t2) in week:
+                    f.write(f" (ite m_{t1}_{t2}_p{i} 1 0)")
+                f.write(")))\n")
+        f.write("\n")
+
+        # Constraint N. 3: Every team plays at most twice in the same period
+        for team, matches in team_matches.items():
+            for i in range(1, periods + 1):
+                f.write("(assert (<= (+")
+                for (t1, t2) in matches:
+                    f.write(f" (ite m_{t1}_{t2}_p{i} 1 0)")
+                f.write(") 2))\n")
+
+        f.write("\n")
+
+        for t in range(1, n + 1):
+            f.write(f"(assert (and (>= diff_{t} 1) (<= diff_{t} {n - 1})))")
+
+        for team, matches in team_matches.items():
+            sum1 = ""
+            sum2 = ""
+            for (t1, t2) in matches:
+                if team == t1:
+                    sum1 = sum1 + f" (ite h_{t1}_{t2} 1 0)"  # home games
+                    sum2 = sum2 + f" (ite h_{t1}_{t2} 0 1)"  # away games
+                elif team == t2:
+                    sum1 = sum1 + f" (ite h_{t1}_{t2} 0 1)"  # home games
+                    sum2 = sum2 + f" (ite h_{t1}_{t2} 1 0)"  # away games
+
+            assertion1 = f"(assert (>= diff_{team} (- (+" + sum1 + ") (+" + sum2 + "))))\n"
+            assertion2 = f"(assert (>= diff_{team} (- (- (+" + sum1 + ") (+" + sum2 + ")))))\n"
+            f.write(assertion1)
+            f.write(assertion2)
+
+            # assertion = f"(assert (= diff_{team} (abs (- (+" + sum1 + ") (+" + sum2 + ")))))\n"
+            # f.write(assertion)
+
+        f.write("\n")
+
+        f.write("(minimize (+")
+        for t in range(1, n + 1):
+            f.write(f" diff_{t}")
+        f.write("))\n")
+
+        f.write("(check-sat)\n")
+        for week in schedule:
+            for (t1, t2) in week:
+                for p in range(1, periods + 1):
+                    f.write(f"(get-value (m_{t1}_{t2}_p{p}))\n")
+        f.write("(get-objectives)\n")
         f.close()
 
 
@@ -462,26 +574,32 @@ def kirkman_tournament(n):
 
     return tournament
 
-n = 14
-s = time.time()
-generate_smtfile_CM_UF_SB(n)
-solution = subprocess.getoutput("z3 schedule.smt2")
-e = time.time()
-runtime = e - s
-print(runtime)
 
-solution = solution.split("\n")  # splitting the file
-if solution[0] == "sat":  # checking if the solution is sat
+def solution_to_matrix_converter(n: int, solution: list):
     schedule = []  # list for the periods
-    for _ in range(n//2):
+    for _ in range(n // 2):
         schedule.append([])
 
-    for s in solution[1:]:  # getting the matches from the solution
+    for s in solution:  # getting the matches from the solution
         s = s.split(" ")
         if s[1][0] == "t":
             match = s[0].split("_")
             period = int(match[-1][1:])
-            schedule[period-1].append([int(match[1]), int(match[2])])
+            schedule[period - 1].append([int(match[1]), int(match[2])])
+    return schedule
+
+
+solver_type = "z3"
+n = 12
+s = time.time()
+generate_decisional_model(n)
+solution = subprocess.getoutput(solver_type + " schedule.smt2")
+e = time.time()
+runtime = math.floor(e - s)
+
+solution = solution.split("\n")  # splitting the file
+if solution[0] == "sat":  # checking if the solution is sat
+    schedule = solution_to_matrix_converter(n, solution[1:])
 
     for s in schedule:
         print(s)
@@ -493,5 +611,19 @@ if solution[0] == "sat":  # checking if the solution is sat
         "sol": schedule
     }
 
-    print(json.dumps(approach))
+    previous_results = dict()
+    try:
+        with open(f"../../res/SMT/{n}.json", mode="r", encoding="utf-8") as f:
+            previous_results = json.load(f)
+            # print(previous_results)
+    except json.JSONDecodeError as e:
+        print(e)
+    except FileNotFoundError:
+        ""
+
+    previous_results[solver_type] = approach
+    with open(f"../../res/SMT/{n}.json", mode="w", encoding="utf-8") as f:
+        json.dump(previous_results, f, indent=1)
+
+
 
