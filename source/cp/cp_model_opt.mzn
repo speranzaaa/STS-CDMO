@@ -84,7 +84,6 @@ solve :: seq_search([
         complete
     )
 ])
-:: restart_geometric(1.2, 300)
 minimize objective;
 
 
@@ -114,3 +113,5 @@ output [
     ]) ++ "\n]\n" ++
     "obj = " ++ show(objective) ++ "\n" 
 ];
+
+
