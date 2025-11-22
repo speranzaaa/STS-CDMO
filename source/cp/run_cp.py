@@ -3,108 +3,141 @@ import json
 import os
 import math
 import time
+import re
 
-MODEL_FILE = os.path.join("source", "CP", "cp_model.mzn")
+MODEL_DECISION = os.path.join("source", "CP", "cp_model.mzn")
+MODEL_OPT = os.path.join("source", "CP", "cp_model_opt.mzn")
 DZN_DIR = os.path.join("source", "CP")
-INSTANCES = ["6", "8", "10", "12", "14", "16"] 
-SOLVER = "Gecode"
-APPROACH_NAME = "Gecode"
+OUTPUT_DIR = os.path.join("res", "CP")
+INSTANCES = ["6", "8", "10", "12", "14", "16", "18"]
 TIME_LIMIT_MS = 300000
 TIME_LIMIT_SEC = 300
 
-output_dir = os.path.join("res", "CP")
-os.makedirs(output_dir, exist_ok=True)
+EXPERIMENTS = [
+    {
+        "name": "gecode",
+        "solver": "gecode",
+        "model": MODEL_DECISION
+    },
+    {
+        "name": "chuffed",
+        "solver": "chuffed",
+        "model": MODEL_DECISION
+    },
+    {
+        "name": "gecode_opt",
+        "solver": "gecode",
+        "model": MODEL_OPT
+    }
+]
 
-if not os.path.exists(MODEL_FILE):
-    print(f"Error: Model file not found at {MODEL_FILE}")
-    exit()
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-for inst_name in INSTANCES:
-    dzn_file = os.path.join(DZN_DIR, f"{inst_name}.dzn")
-    json_file_path = os.path.join(output_dir, f"{inst_name}.json")
+def parse_minizinc_output(stdout, is_optimization):
+    final_sol = []
+    final_obj = None
+    is_optimal = False
+    
+    has_separator = "----------" in stdout
+    has_double_separator = "==========" in stdout
+    
+    if is_optimization:
+        is_optimal = has_double_separator
+    else:
+        is_optimal = has_separator
 
-    if not os.path.exists(dzn_file):
-        print(f"Warning: Data file not found at {dzn_file}. Skipping instance.")
-        continue
+    if "=====UNSATISFIABLE=====" in stdout:
+        return [], None, False
+
+    if has_separator:
+        blocks = stdout.split("----------")
+        for block in blocks:
+            block = block.strip()
+            if not block: continue
+            try:
+                start = block.find('[')
+                end = block.rfind(']') + 1
+                if start != -1 and end != -1:
+                    sol_list = json.loads(block[start:end])
+                    
+                    obj_match = re.search(r'obj\s*=\s*(\d+)', block)
+                    current_obj = int(obj_match.group(1)) if obj_match else None
+                    
+                    final_sol = sol_list
+                    final_obj = current_obj
+            except:
+                continue
+                
+    return final_sol, final_obj, is_optimal
+
+def run_experiment(exp_config, dzn_path):
+    model_path = exp_config["model"]
+    solver_id = exp_config["solver"]
+    is_optimization = "opt" in model_path or "opt" in exp_config["name"]
 
     command = [
         "minizinc",
-        "--solver", SOLVER,
+        "--solver", solver_id,
         "--time-limit", str(TIME_LIMIT_MS),
-        MODEL_FILE,
-        dzn_file
+        model_path,
+        dzn_path
     ]
 
     start_time = time.perf_counter()
-    sol_data = []
-    optimal = False
-    runtime_sec = 0
-
+    
     try:
         result = subprocess.run(
             command,
             capture_output=True,
             text=True,
-            timeout=TIME_LIMIT_SEC + 1,
+            timeout=TIME_LIMIT_SEC + 10,
             encoding='utf-8'
         )
-        
-        end_time = time.perf_counter()
-        runtime_sec = end_time - start_time
         stdout = result.stdout.strip()
-        stderr = result.stderr
-
-        if "=====UNSATISFIABLE=====" in stdout:
-            optimal = False
-            sol_data = []
-        elif stdout:
-            try:
-                solution_str = stdout.split("----------")[0].strip()
-                sol_data = json.loads(solution_str)
-                optimal = True
-            except json.JSONDecodeError:
-                optimal = False
-                sol_data = [] 
-                runtime_sec = TIME_LIMIT_SEC 
-                print(f"--- ERROR: Instance {inst_name} output was not valid JSON! ---")
-                print(stdout)
-        else:
-            optimal = False
-            sol_data = [] 
-            if runtime_sec < TIME_LIMIT_SEC:
-                runtime_sec = TIME_LIMIT_SEC
-            if stderr:
-                print(f"--- ERROR: Instance {inst_name} produced an error ---")
-                print(stderr)
-
+        actual_runtime = time.perf_counter() - start_time
     except subprocess.TimeoutExpired:
-        runtime_sec = TIME_LIMIT_SEC
-        optimal = False
-        sol_data = []
+        stdout = ""
+        actual_runtime = TIME_LIMIT_SEC
     
-    if runtime_sec >= TIME_LIMIT_SEC and not optimal:
-        run_time_int = TIME_LIMIT_SEC
-    else:
-        run_time_int = math.floor(runtime_sec)
+    sol, obj, optimal = parse_minizinc_output(stdout, is_optimization)
+    
+    report_time = math.floor(actual_runtime)
+    if report_time >= TIME_LIMIT_SEC:
+        report_time = TIME_LIMIT_SEC
+        if not sol:
+            optimal = False
+    
+    if not is_optimization and obj is None:
+        obj = None
 
-    approach_result = {
-        "time": run_time_int,
+    return {
+        "time": report_time,
         "optimal": optimal,
-        "obj": None, 
-        "sol": sol_data
+        "obj": obj,
+        "sol": sol
     }
 
-    if os.path.exists(json_file_path):
-        with open(json_file_path, 'r') as f:
+if os.path.exists(MODEL_DECISION) and os.path.exists(MODEL_OPT):
+    for inst_name in INSTANCES:
+        dzn_file = os.path.join(DZN_DIR, f"{inst_name}.dzn")
+        json_file_path = os.path.join(OUTPUT_DIR, f"{inst_name}.json")
+        
+        if not os.path.exists(dzn_file):
+            continue
+            
+        final_data = {}
+        if os.path.exists(json_file_path):
             try:
-                all_results = json.load(f)
-            except json.JSONDecodeError:
-                all_results = {}
-    else:
-        all_results = {}
+                with open(json_file_path, 'r') as f:
+                    final_data = json.load(f)
+            except:
+                final_data = {}
 
-    all_results[APPROACH_NAME] = approach_result
+        for exp in EXPERIMENTS:
+            if not os.path.exists(exp["model"]):
+                continue
+            result = run_experiment(exp, dzn_file)
+            final_data[exp["name"]] = result
 
-    with open(json_file_path, 'w') as f:
-
-        json.dump(all_results, f)
+        with open(json_file_path, 'w') as f:
+            json.dump(final_data, f, indent=4)
