@@ -575,7 +575,7 @@ def kirkman_tournament(n):
     return tournament
 
 
-def solution_to_matrix_converter(n: int, solution: list):
+def solution_to_matrix(n: int, solution: list):
     schedule = []  # list for the periods
     for _ in range(n // 2):
         schedule.append([])
@@ -589,41 +589,98 @@ def solution_to_matrix_converter(n: int, solution: list):
     return schedule
 
 
-solver_type = "z3"
-n = 12
-s = time.time()
-generate_decisional_model(n)
-solution = subprocess.getoutput(solver_type + " schedule.smt2")
-e = time.time()
-runtime = math.floor(e - s)
+def solution_to_matrix_converter_optmathsat(n: int, solution: list):
+    schedule = []  # list for the periods
+    for _ in range(n // 2):
+        schedule.append([])
 
-solution = solution.split("\n")  # splitting the file
-if solution[0] == "sat":  # checking if the solution is sat
-    schedule = solution_to_matrix_converter(n, solution[1:])
+    for s in solution:  # getting the matches from the solution
+        s = s.split(" ")
+        if s[2][0] == "t":
+            match = s[1].split("_")
+            period = int(match[-1][1:])
+            schedule[period - 1].append([int(match[1]), int(match[2])])
+    return schedule
 
-    for s in schedule:
-        print(s)
 
-    approach = {
-        "time": runtime,
-        "optimal": False,
-        "obj": None,
-        "sol": schedule
-    }
-
-    previous_results = dict()
+def generate_json(n: int, result: dict):
+    # check if there exists a file .json for n
     try:
         with open(f"../../res/SMT/{n}.json", mode="r", encoding="utf-8") as f:
             previous_results = json.load(f)
             # print(previous_results)
-    except json.JSONDecodeError as e:
-        print(e)
+    # if it doesn't exist create a dict
     except FileNotFoundError:
-        ""
+        previous_results = dict()
 
-    previous_results[solver_type] = approach
+    # put the result inside the dict and put it into the .json file
+    previous_results[solver_type] = result
     with open(f"../../res/SMT/{n}.json", mode="w", encoding="utf-8") as f:
-        json.dump(previous_results, f, indent=1)
+        json.dump(previous_results, f)
+
+
+solver_type = "yices-smt2"
+n = 6
+
+s = time.time()
+generate_decisional_model(n)
+try:
+    result = subprocess.run(
+        [solver_type, "schedule.smt2"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=300
+    )
+    solution = result.stdout
+    e = time.time()
+    runtime = math.floor(e - s)
+    # splitting the file
+    solution = solution.split("\n")
+    # checking if the solution is sat
+    if solution[0] == "sat":
+        # schedule = solution_to_matrix_converter_optmathsat(n, solution[1:])
+        schedule = solution_to_matrix(n, solution[1:-1])  # removing "sat" and last line
+
+        for s in schedule:
+            print(s)
+
+        result = {
+            "time": runtime,
+            "optimal": False,
+            "obj": None,
+            "sol": schedule
+        }
+
+        generate_json(n, result)
+
+    elif solution[0] == "unsat":
+
+        result = {
+            "time": runtime,
+            "optimal": True,
+            "obj": None,
+            "sol": []
+        }
+
+        generate_json(n, result)
+
+except subprocess.TimeoutExpired:
+    solution = None
+    runtime = 300
+
+    result = {
+        "time": runtime,
+        "optimal": False,
+        "obj": None,
+        "sol": []
+    }
+
+    generate_json(n, result)
+
+
+
+
 
 
 
