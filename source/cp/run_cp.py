@@ -14,43 +14,59 @@ TIME_LIMIT_MS = 300000
 TIME_LIMIT_SEC = 300
 
 EXPERIMENTS = [
-    {
-        "name": "gecode",
-        "solver": "gecode",
-        "model": MODEL_DECISION
-    },
-    {
-        "name": "chuffed",
-        "solver": "chuffed",
-        "model": MODEL_DECISION
-    },
-    {
-        "name": "gecode_opt",
-        "solver": "gecode",
-        "model": MODEL_OPT
-    }
+    {"name": "gecode", "solver": "gecode", "model": MODEL_DECISION},
+    {"name": "chuffed", "solver": "chuffed", "model": MODEL_DECISION},
+    {"name": "gecode_opt", "solver": "gecode", "model": MODEL_OPT}
 ]
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def parse_minizinc_output(stdout, is_optimization):
+def calculate_objective_python(sol):
+    if not sol: return None
+    try:
+        home_counts = {}
+        all_teams = set()
+        
+        for period_row in sol:
+            for match in period_row:
+                if len(match) >= 2:
+                    h, a = match[0], match[1]
+                    all_teams.add(h)
+                    all_teams.add(a)
+                    home_counts[h] = home_counts.get(h, 0) + 1
+                    if a not in home_counts: home_counts[a] = 0
+        
+        if not all_teams: return None
+        n = max(all_teams)
+        weeks = n - 1
+        
+        obj_val = 0
+        for t in range(1, n + 1):
+            hc = home_counts.get(t, 0)
+            obj_val += abs(2 * hc - weeks)
+        return obj_val
+    except:
+        return None
+
+def parse_output_file(filepath, is_optimization):
     final_sol = []
     final_obj = None
     is_optimal = False
     
-    has_separator = "----------" in stdout
-    has_double_separator = "==========" in stdout
-    
-    if is_optimization:
-        is_optimal = has_double_separator
-    else:
-        is_optimal = has_separator
-
-    if "=====UNSATISFIABLE=====" in stdout:
+    if not os.path.exists(filepath):
         return [], None, False
 
-    if has_separator:
-        blocks = stdout.split("----------")
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    if "==========" in content:
+        is_optimal = True
+    
+    if not is_optimization and "----------" in content:
+        is_optimal = True
+
+    if "----------" in content:
+        blocks = content.split("----------")
         for block in blocks:
             block = block.strip()
             if not block: continue
@@ -60,8 +76,9 @@ def parse_minizinc_output(stdout, is_optimization):
                 if start != -1 and end != -1:
                     sol_list = json.loads(block[start:end])
                     
-                    obj_match = re.search(r'obj\s*=\s*(\d+)', block)
-                    current_obj = int(obj_match.group(1)) if obj_match else None
+                    current_obj = None
+                    if is_optimization:
+                        current_obj = calculate_objective_python(sol_list)
                     
                     final_sol = sol_list
                     final_obj = current_obj
@@ -74,48 +91,48 @@ def run_experiment(exp_config, dzn_path):
     model_path = exp_config["model"]
     solver_id = exp_config["solver"]
     is_optimization = "opt" in model_path or "opt" in exp_config["name"]
+    
+    temp_file = f"temp_{exp_config['name']}.txt"
 
     command = [
         "minizinc",
-        "--solver", solver_id,
-        "--time-limit", str(TIME_LIMIT_MS),
-        model_path,
-        dzn_path
+        "--solver", solver_id, 
+        "--time-limit", str(TIME_LIMIT_MS), 
+        model_path, dzn_path
     ]
 
     start_time = time.perf_counter()
     
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=TIME_LIMIT_SEC + 10,
-            encoding='utf-8'
-        )
-        stdout = result.stdout.strip()
-        actual_runtime = time.perf_counter() - start_time
-    except subprocess.TimeoutExpired:
-        stdout = ""
-        actual_runtime = TIME_LIMIT_SEC
+    with open(temp_file, 'w', encoding='utf-8') as outfile:
+        try:
+            subprocess.run(command, stdout=outfile, stderr=subprocess.DEVNULL, timeout=TIME_LIMIT_SEC + 5)
+        except subprocess.TimeoutExpired:
+            pass 
+
+    actual_runtime = time.perf_counter() - start_time
     
-    sol, obj, optimal = parse_minizinc_output(stdout, is_optimization)
+    sol, obj, optimal = parse_output_file(temp_file, is_optimization)
+    
+    if os.path.exists(temp_file):
+        try:
+            os.remove(temp_file)
+        except:
+            pass
     
     report_time = math.floor(actual_runtime)
+    
     if report_time >= TIME_LIMIT_SEC:
         report_time = TIME_LIMIT_SEC
         if not sol:
             optimal = False
-    
-    if not is_optimization and obj is None:
+    else:
+        if sol and actual_runtime < (TIME_LIMIT_SEC - 2):
+            optimal = True
+
+    if not is_optimization:
         obj = None
 
-    return {
-        "time": report_time,
-        "optimal": optimal,
-        "obj": obj,
-        "sol": sol
-    }
+    return {"time": report_time, "optimal": optimal, "obj": obj, "sol": sol}
 
 if os.path.exists(MODEL_DECISION) and os.path.exists(MODEL_OPT):
     for inst_name in INSTANCES:
