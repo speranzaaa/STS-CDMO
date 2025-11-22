@@ -86,7 +86,6 @@ solve :: seq_search([
 ])
 minimize objective;
 
-
 array[Periods, Weeks, 1..2] of var Teams: games;
 
 constraint forall(t in Teams, w in Weeks where t < opponent[t,w])(
@@ -110,8 +109,5 @@ output [
         ]) ++ "]"
         ++ if p < periods then ",\n" else "\n" endif
         | p in Periods
-    ]) ++ "\n]\n" ++
-    "obj = " ++ show(objective) ++ "\n" 
+    ]) ++ "\n]\n"
 ];
-
-
