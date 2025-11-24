@@ -4,14 +4,16 @@ import os
 import math
 import time
 
-BASE_PATH = os.path.join("source", "CP")
-MODEL_DECISION = os.path.join(BASE_PATH, "cp_model.mzn")
-MODEL_OPT = os.path.join(BASE_PATH, "cp_model_opt.mzn")
-MODEL_DECISION_NOSB = os.path.join(BASE_PATH, "cp_model_nosb.mzn")
-MODEL_OPT_NOSB = os.path.join(BASE_PATH, "cp_model_opt_nosb.mzn")
-DZN_DIR = BASE_PATH
+BASE_CP_DIR = os.path.join("source", "CP")
 
+MODEL_DECISION = os.path.join(BASE_CP_DIR, "cp_model.mzn")
+MODEL_OPT = os.path.join(BASE_CP_DIR, "cp_model_opt.mzn")
+MODEL_DECISION_NOSB = os.path.join(BASE_CP_DIR, "cp_model_nosb.mzn")
+MODEL_OPT_NOSB = os.path.join(BASE_CP_DIR, "cp_model_opt_nosb.mzn")
+
+DZN_DIR = BASE_CP_DIR
 OUTPUT_DIR = os.path.join("res", "CP")
+
 INSTANCES = ["6", "8", "10", "12", "14", "16", "18"]
 TIME_LIMIT_MS = 300000
 TIME_LIMIT_SEC = 300
