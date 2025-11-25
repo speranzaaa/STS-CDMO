@@ -22,16 +22,26 @@ RUN apt-get update && \
         build-essential \
         glpk-utils \
         coinor-cbc \
+        z3 \
+        libgmp-dev \
+        gperf \
         dos2unix && \
     
     apt-get autoremove -y && \
     apt-get clean -y && \
     rm -rf /var/lib/apt/lists/*
 
-RUN wget https://github.com/MiniZinc/MiniZincIDE/releases/download/2.8.5/minizinc_2.8.5-1_amd64.deb && \
-    apt-get update && \
-    apt-get install -y ./minizinc_2.8.5-1_amd64.deb && \
-    rm minizinc_2.8.5-1_amd64.deb
+# Install MiniZincIDE
+RUN wget https://github.com/MiniZinc/MiniZincIDE/releases/download/2.8.5/MiniZincIDE-2.8.5-bundle-linux-x86_64.tgz && \
+    tar xzf MiniZincIDE-2.8.5-bundle-linux-x86_64.tgz && \
+    mv MiniZincIDE-2.8.5-bundle-linux-x86_64 /opt/minizinc && \
+    rm MiniZincIDE-2.8.5-bundle-linux-x86_64.tgz
+
+# Install Optimathsat
+RUN wget https://optimathsat.disi.unitn.it/releases/optimathsat-1.7.3/optimathsat-1.7.3-linux-64-bit.tar.gz && \
+    tar xzf optimathsat-1.7.3-linux-64-bit.tar.gz && \
+    mv optimathsat-1.7.3-linux-64-bit /opt/optimathsat && \
+    rm optimathsat-1.7.3-linux-64-bit.tar.gz
     
 RUN pip install --upgrade pip
 RUN pip install wrapt --upgrade --ignore-installed
@@ -44,8 +54,10 @@ COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt && \
     pip3 install --no-cache-dir -U git+https://github.com/coin-or/pulp
 
-# Default command
-CMD ["/bin/bash"]
-
 # Back to default frontend
 ENV DEBIAN_FRONTEND=dialog
+ENV PATH="/opt/minizinc/bin:${PATH}"
+ENV PATH="/opt/optimathsat/bin:${PATH}"
+
+# Default command
+CMD ["/bin/bash"]
