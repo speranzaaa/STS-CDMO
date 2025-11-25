@@ -1,3 +1,4 @@
+import argparse
 import math
 import subprocess
 import time
@@ -745,8 +746,12 @@ def generate_json(n: int, result: dict, solver:str):
 
 def solve(n: int, solver_type: str, mode: str):
 
+    print("-"*20 + "\n")
+    print(f"Runnung n = {n} in {mode} mode with {solver_type}")
+    print("-" * 20 + "\n")
+
     if mode == "decisional":
-        s = time.time()
+        start = time.time()
         generate_decisional_model(n)
         try:
             result = subprocess.run(
@@ -757,10 +762,12 @@ def solve(n: int, solver_type: str, mode: str):
                 timeout=300
             )
             solution = result.stdout
-            e = time.time()
-            runtime = math.floor(e - s)
+            end = time.time()
+            runtime = math.floor(end - start)
             # splitting the file
             solution = solution.split("\n")
+            print("1", solution)
+
             # checking if the solution is sat
             if solution[0] == "sat":
                 if solver_type == "optimathsat":
@@ -768,17 +775,13 @@ def solve(n: int, solver_type: str, mode: str):
                 else:
                     schedule, obj = solution_to_matrix(n, solution[1:-1])  # removing "sat" and last line
 
-                for s in schedule:
-                    print(s)
-
+                print(runtime, "\n", schedule)
                 result = {
                     "time": runtime,
                     "optimal": False,
                     "obj": None,
                     "sol": schedule
                 }
-
-                generate_json(n, result, solver_type)
 
             elif solution[0] == "unsat":
 
@@ -789,13 +792,12 @@ def solve(n: int, solver_type: str, mode: str):
                     "sol": []
                 }
 
-                generate_json(n, result, solver_type)
+            generate_json(n, result, solver_type)
 
         except subprocess.TimeoutExpired:
-            runtime = 300
 
             result = {
-                "time": runtime,
+                "time": 300,
                 "optimal": False,
                 "obj": None,
                 "sol": []
@@ -803,9 +805,11 @@ def solve(n: int, solver_type: str, mode: str):
 
             generate_json(n, result, solver_type)
 
+            raise TimeoutError
+
     elif mode == "optimal":
-        s = time.time()
-        generate_optimal_model(n)
+        start = time.time()
+        generate_optimal_model2(n)
         try:
             if solver_type == "z3":
                 result = subprocess.run(
@@ -817,17 +821,13 @@ def solve(n: int, solver_type: str, mode: str):
                 )
 
                 solution = result.stdout
-                e = time.time()
-                runtime = math.floor(e - s)
-                print(runtime)
+                end = time.time()
+                runtime = math.floor(end - start)
 
                 solution = solution.split("\n")
                 # checking if the solution is sat
                 if solution[0] == "sat":
                     schedule, obj = solution_to_matrix(n, solution[1:-1])  # removing "sat" and last line
-
-                    for s in schedule:
-                        print(s)
 
                     result = {
                         "time": runtime,
@@ -836,7 +836,15 @@ def solve(n: int, solver_type: str, mode: str):
                         "sol": schedule
                     }
 
-                    generate_json(n, result, solver_type + "_opt")
+                elif solution[0] == "unsat":
+
+                    result = {
+                        "time": runtime,
+                        "optimal": True,
+                        "obj": None,
+                        "sol": []
+                    }
+
             else:
                 result = subprocess.run(
                     [solver_type, "-optimization=true", "schedule.smt2"],
@@ -847,18 +855,14 @@ def solve(n: int, solver_type: str, mode: str):
                 )
 
                 solution = result.stdout
-                e = time.time()
-                runtime = math.floor(e - s)
-                print(runtime)
+                end = time.time()
+                runtime = math.floor(end - start)
 
                 solution = solution.split("\n")
 
                 # checking if the solution is sat
                 if solution[0] == "sat":
                     schedule, obj = solution_to_matrix_optimathsat(n, solution[1:-1])  # removing "sat" and last line
-
-                    for s in schedule:
-                        print(s)
 
                     result = {
                         "time": runtime,
@@ -867,17 +871,108 @@ def solve(n: int, solver_type: str, mode: str):
                         "sol": schedule
                     }
 
-                    generate_json(n, result, solver_type + "_opt")
+                elif solution[0] == "unsat":
+
+                    result = {
+                        "time": runtime,
+                        "optimal": True,
+                        "obj": None,
+                        "sol": []
+                    }
+
+            generate_json(n, result, solver_type + "_opt")
 
         except subprocess.TimeoutExpired:
-            runtime = 300
-            print(runtime)
+
+            result = {
+                "time": 300,
+                "optimal": False,
+                "obj": None,
+                "sol": []
+            }
+
+            generate_json(n, result, solver_type + "_opt")
+
+            raise TimeoutError
 
 
 def main():
-    for n in range(6, 21, 2):
-        print(f"n = {n}")
-        solve(n, "z3", "optimal")
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
+    group = parser.add_mutually_exclusive_group() # to exclude incompatible commands
+    group.add_argument("-all", action="store_true",
+                        help="Run all instances for n from 2 to 20")
+    group.add_argument("-n", type=int, choices=range(4, 31, 2),
+                        help="Number of teams (must be even)")
+    parser.add_argument("--solver", type=str, choices=["z3", "optimathsat", "all"], default="all",
+                        help="SMT solver type:\n - z3: Z3 solver (default value),\n - optimathsat: OptiMathSAT "
+                             "solver, \n - all: run both solvers")
+    parser.add_argument("--mode", type=str, choices=["decisional", "optimal", "all"], default="all",
+                        help="Running mode for the solver: \n - decisional, \n - optimal (for optimization)")
+
+    args = parser.parse_args()
+
+    solvers = ["z3", "optimathsat"]
+    modes = ["decisional", "optimal"]
+
+    n = args.n
+    solver = args.solver
+    mode = args.mode
+
+    if args.all:
+        if solver == "all" and mode == "all":
+            for n in range(4, 21, 2):
+                for solver in solvers:
+                    for mode in modes:
+                        try:
+                            solve(n, solver, mode)
+                        except TimeoutError as e:
+                            print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                            return
+        elif solver == "all":
+            for n in range(4, 21, 2):
+                for solver in solvers:
+                    try:
+                        solve(n, solver, mode)
+                    except TimeoutError as e:
+                        print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                        return
+        elif mode == "all":
+            for n in range(4, 21, 2):
+                for mode in modes:
+                    try:
+                        solve(n, solver, mode)
+                    except TimeoutError as e:
+                        print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                        return
+        else:
+            for n in range(4, 21, 2):
+                try:
+                    solve(n, solver, mode)
+                except TimeoutError as e:
+                    print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                    return
+    elif n:
+        if solver == "all" and mode == "all":
+            for solver in solvers:
+                for mode in modes:
+                    try:
+                        solve(n, solver, mode)
+                    except TimeoutError as e:
+                        print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+        elif solver == "all":
+            for solver in solvers:
+                try:
+                    solve(n, solver, mode)
+                except TimeoutError as e:
+                    print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+        elif mode == "all":
+            for mode in modes:
+                try:
+                    solve(n, solver, mode)
+                except TimeoutError as e:
+                    print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+        else:
+            solve(n, solver, mode)
 
 
 if __name__ == "__main__":
