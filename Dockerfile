@@ -1,5 +1,4 @@
-# FROM ubuntu:22.04
-FROM minizinc/minizinc:2.8.5
+FROM minizinc/minizinc:2.9.3
 
 # Avoid interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -10,9 +9,6 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # Set working directory
 WORKDIR /sts_solver
-
-RUN sed -i 's/archive.ubuntu.com/it.archive.ubuntu.com/g' /etc/apt/sources.list && \
-    sed -i 's/security.ubuntu.com/it.archive.ubuntu.com/g' /etc/apt/sources.list
 
 # Install system dependencies
 RUN apt-get update && \
@@ -29,9 +25,8 @@ RUN apt-get update && \
         coinor-cbc \
         z3 \
         libgmp-dev \
-        gperf \
         dos2unix && \
-    
+    \
     apt-get autoremove -y && \
     apt-get clean -y && \
     rm -rf /var/lib/apt/lists/*
