@@ -728,7 +728,7 @@ def solution_to_matrix_optimathsat(n: int, solution: list):
     return schedule, obj
 
 
-def generate_json(n: int, result: dict, solver:str):
+def generate_json(n: int, result: dict, solver: str):
     # check if there exists a file .json for n
     try:
         with open(f"../../res/SMT/{n}.json", mode="r", encoding="utf-8") as f:
@@ -745,10 +745,8 @@ def generate_json(n: int, result: dict, solver:str):
 
 
 def solve(n: int, solver_type: str, mode: str):
-
-    print("-"*20 + "\n")
-    print(f"Runnung n = {n} in {mode} mode with {solver_type}")
-    print("-" * 20 + "\n")
+    print("-"*100)
+    print(f"Running n={n} in {mode} mode with {solver_type}")
 
     if mode == "decisional":
         start = time.time()
@@ -766,7 +764,6 @@ def solve(n: int, solver_type: str, mode: str):
             runtime = math.floor(end - start)
             # splitting the file
             solution = solution.split("\n")
-            print("1", solution)
 
             # checking if the solution is sat
             if solution[0] == "sat":
@@ -775,7 +772,6 @@ def solve(n: int, solver_type: str, mode: str):
                 else:
                     schedule, obj = solution_to_matrix(n, solution[1:-1])  # removing "sat" and last line
 
-                print(runtime, "\n", schedule)
                 result = {
                     "time": runtime,
                     "optimal": False,
@@ -792,6 +788,8 @@ def solve(n: int, solver_type: str, mode: str):
                     "sol": []
                 }
 
+            print(f"Time of execution: {runtime}")
+
             generate_json(n, result, solver_type)
 
         except subprocess.TimeoutExpired:
@@ -802,6 +800,8 @@ def solve(n: int, solver_type: str, mode: str):
                 "obj": None,
                 "sol": []
             }
+
+            print(f"Time of execution: {runtime}")
 
             generate_json(n, result, solver_type)
 
@@ -879,6 +879,8 @@ def solve(n: int, solver_type: str, mode: str):
                         "obj": None,
                         "sol": []
                     }
+
+            print(f"Time of execution: {runtime}")
 
             generate_json(n, result, solver_type + "_opt")
 
