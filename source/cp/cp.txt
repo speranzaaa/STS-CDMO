@@ -1,0 +1,14 @@
+*Run a single instance*
+specify choosing between those params:
+    solver = ["gocode", "chuffed", "gecode_opt", "gecode_without_sb", "chuffed_without_sb", "gecode_opt_without_sb" ]
+    n = [6, 8, 10, 12, 14, 16, 18]
+
+python3 source/CP/run_cp.py -n 10 -t 300 --solver gecode_opt
+
+
+*Run all solver configurations on specified n*
+python3 source/CP/run_cp.py -n 8 -t 300 --solver all
+
+
+*Run all instances on all n*
+python3 source/CP/run_cp.py -t 300 --solver all
