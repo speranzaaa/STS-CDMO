@@ -7,9 +7,9 @@ python3 path/file.py --arg1 value1 --arg2 value2
 
 
 "Run bash"
-docker run -it <image-name> bash
+docker run -it <image-name> bash 
+            OR 
+docker run -it -v ${PWD}:/CDMO-DOCKER <image-name> bash
 
-
-"Install new library"
-1. add into requirements.txt or into Dockerfile(in case of github)
-2. re-build the docker image
+"
+chmod +x source/MIP/run.sh

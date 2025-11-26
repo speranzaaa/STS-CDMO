@@ -25,7 +25,7 @@ fi
 
 TIMEOUT=300
 
-SOLVER="source/SAT/solver.py" 
+SOLVER="source/SAT/run_sat.py" 
 VERBOSE=true
 SAVE_JSON=true
 
@@ -47,7 +47,7 @@ run_combo() {
     echo " (CWD forced to $ROOT_DIR)"
     echo "----------------------------------------------------"
 
-    CMD="python \"$SOLVER\" -n $n --exactly_one_encoding $ex1 --at_most_k_encoding $amk"
+    CMD="python3 \"$SOLVER\" -n $n --exactly_one_encoding $ex1 --at_most_k_encoding $amk"
 
     if [ "$sb" == "sb" ]; then
         CMD="$CMD --sb"

@@ -1,4 +1,4 @@
-FROM minizinc/minizinc:2.9.3
+FROM minizinc/minizinc:2.8.5
 
 # Avoid interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -8,13 +8,13 @@ ENV LC_ALL=C.UTF-8
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # Set working directory
-WORKDIR /sts_solver
+WORKDIR /CDMO-DOCKER
 
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y \
         curl \
-        python3.10 \
+        python3.12 \
         python3-pip \
         wget \
         git \
@@ -36,17 +36,18 @@ RUN wget https://optimathsat.disi.unitn.it/releases/optimathsat-1.7.3/optimathsa
     tar xzf optimathsat-1.7.3-linux-64-bit.tar.gz && \
     mv optimathsat-1.7.3-linux-64-bit /opt/optimathsat && \
     rm optimathsat-1.7.3-linux-64-bit.tar.gz
-    
-# RUN pip install --upgrade pip
+
 RUN pip install wrapt --upgrade --ignore-installed
 RUN pip install gdown
-
+    
 # Copy requirements first for better caching
 COPY requirements.txt .
 
 # Install Python packages
 RUN pip3 install --no-cache-dir -r requirements.txt && \
     pip3 install --no-cache-dir -U git+https://github.com/coin-or/pulp
+
+COPY . .
 
 # Back to default frontend
 ENV DEBIAN_FRONTEND=dialog

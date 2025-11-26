@@ -1,3 +1,12 @@
+"""
+Refactored Sport Tournament Scheduler (STS)
+- Functionality preserved exactly.
+- Improved readability, PEP8-compliant names, docstrings and comments.
+- Grouped helper functions and clearer variable names.
+
+Note: Z3 `from z3 import *` is preserved to avoid changing external behaviour.
+"""
+
 from __future__ import annotations
 
 import argparse
