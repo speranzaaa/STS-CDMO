@@ -1,0 +1,30 @@
+------- Instructions to run the SMT model --------
+
+ ** Possible arguments **
+
+  -all -> Run all instances for n from 4 to 20
+  -n -> Number of teams (must be even)
+  --solver -> SMT Solver. Possible values:
+                - z3
+                - optimathsat
+                - all : run both solvers (default)
+  --mode -> Running mode for the solver:
+                - decisional
+                - optimal
+                - all : run both modes (default)
+
+  !NOTE THAT the commands -all and -n are mutually exclusive.
+
+ ** Examples of executions **
+
+  1. Running all n with each possible option
+      "python3 smt_model.py -all"
+  2. Running all n with a specific set up
+      "python3 smt_model.py -all --solver z3 --mode decisional"
+  3. Running every possible option for a given n
+      "python3 smt_model.py -n 8"
+  4. Running a given n with a specific set up
+      "python3 smt_model.py -n 8 --solver z3 --mode decisional"
+
+  !NOTE THAT it is possible to specify only the solver (or the mode) and the instance will be
+  executed for all the possible value of the unspecified argument.

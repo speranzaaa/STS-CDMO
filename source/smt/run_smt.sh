@@ -1,5 +1,5 @@
 #!/bin/bash
-SOLVER="./generator.py"
+SOLVER="./smt_model.py"
 
 run_smt_all() {
 
