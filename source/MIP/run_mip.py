@@ -380,7 +380,7 @@ if __name__ == "__main__":
         help="Symmetry breaking type (for single mode)",
     )
     parser.add_argument(
-        "--json_path", type=str, default="", help="Path of the resulting json"
+        "--json_path", type=str, default="res/MIP", help="Path of the resulting json"
     )
     parser.add_argument(
         "--json_name", type=str, default="", help="Name of the resulting json"

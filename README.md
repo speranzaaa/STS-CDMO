@@ -21,3 +21,52 @@ An optional objective was also considered: minimizing the unbalance between home
 All models can be run through Docker to ensure reproducibility.
 
 
+## HOW TO BUILD & RUN
+### 1) Build docker container
+```
+docker build -t cdmo .
+```
+
+### 2) Run bash inside container
+```
+docker run -it -v ${PWD}:/app <image-name> bash
+```
+
+### 3) Running instructions
+Note that all possible params are specified in params.txt
+
+* Run a single model 
+```
+# CP
+python3 source/CP/run_cp.py -n n -t time --solver solver
+
+# SAT
+____________________________________________________CIAO ANGELA SCRIVI QUI :)
+
+# SMT
+python3 smt_model.py -n n --solver solver --mode mode
+
+# MIP
+python3 source/MIP/run_mip.py --mode single --n n --time_limit time --solver_type solver --opt opt --sym sym
+```
+
+* Run all model instances fixing n
+```
+./run_all_on_n.sh n
+```
+
+* Run all model instances on all n
+```
+./run_all.sh
+```
+
+### 3) Check instructions
+choose model between CP, SAT, SMT, MIP
+```
+python3 solution_checker.py ./res/<model>
+```
+
+
+
+
+

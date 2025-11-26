@@ -1,0 +1,11 @@
+CP
+    solver: "gecode", "chuffed", "gecode_opt", "gecode_without_sb", "chuffed_without_sb", "gecode_opt_without_sb" 
+
+SAT
+
+SMT
+
+MIP
+    solver_type: "cbc", "highs", "sciPy"
+    opt: "homeAwayDiff0", "homeAwayDiff1", "feasible"
+    sym: "circleMethod", "fixWeek1", "fixWeek2", "noSym"

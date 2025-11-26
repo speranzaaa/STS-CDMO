@@ -8,7 +8,7 @@ ENV LC_ALL=C.UTF-8
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # Set working directory
-WORKDIR /CDMO-DOCKER
+WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && \
