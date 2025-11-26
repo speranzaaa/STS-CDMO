@@ -1,11 +1,16 @@
 import argparse
 import math
+import os
 import subprocess
 import time
+from pathlib import Path
 from pysmt.shortcuts import Solver, Symbol, Not, Plus, Ite, Int, Equals
 from pysmt.typing import BOOL
 from pysmt.smtlib.parser import SmtLibParser
 import json
+
+BASE = Path(__file__).resolve().parent  # directory containing generator.py
+RES_DIR = BASE / "../../res/SMT"
 
 
 # Model without the use of the circle method (kirkman algorithm) - QF_UFLIA logic
@@ -729,9 +734,13 @@ def solution_to_matrix_optimathsat(n: int, solution: list):
 
 
 def generate_json(n: int, result: dict, solver: str):
+
+    os.makedirs(RES_DIR, exist_ok=True)
+
+    json_path = (RES_DIR / f"{n}.json").resolve()
     # check if there exists a file .json for n
     try:
-        with open(f"../../res/SMT/{n}.json", mode="r", encoding="utf-8") as f:
+        with open(json_path, mode="r", encoding="utf-8") as f:
             previous_results = json.load(f)
             # print(previous_results)
     # if it doesn't exist create a dict
@@ -740,7 +749,7 @@ def generate_json(n: int, result: dict, solver: str):
 
     # put the result inside the dict and put it into the .json file
     previous_results[solver] = result
-    with open(f"../../res/SMT/{n}.json", mode="w", encoding="utf-8") as f:
+    with open(json_path, mode="w", encoding="utf-8") as f:
         json.dump(previous_results, f, indent=1)
 
 
@@ -929,7 +938,6 @@ def main():
                             solve(n, solver, mode)
                         except TimeoutError as e:
                             print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
-                            return
         elif solver == "all":
             for n in range(4, 21, 2):
                 for solver in solvers:
@@ -937,7 +945,6 @@ def main():
                         solve(n, solver, mode)
                     except TimeoutError as e:
                         print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
-                        return
         elif mode == "all":
             for n in range(4, 21, 2):
                 for mode in modes:
@@ -945,7 +952,6 @@ def main():
                         solve(n, solver, mode)
                     except TimeoutError as e:
                         print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
-                        return
         else:
             for n in range(4, 21, 2):
                 try:
