@@ -6,11 +6,11 @@ import time
 from pathlib import Path
 from pysmt.shortcuts import Solver, Symbol, Not, Plus, Ite, Int, Equals
 from pysmt.typing import BOOL
-from pysmt.smtlib.parser import SmtLibParser
 import json
 
 BASE = Path(__file__).resolve().parent  # directory containing generator.py
 RES_DIR = BASE / "../../res/SMT"
+SMT_FILE_PATH = BASE / "schedule.smt2"
 
 
 # Model without the use of the circle method (kirkman algorithm) - QF_UFLIA logic
@@ -283,8 +283,7 @@ def generate_smtfile_CM_UF(n, filename="schedule.smt2"):
 
 
 # Models exploiting Kirkman's algorithm with symmetry breaking (2) - QF_UFLIA logic
-def generate_decisional_model(n, filename="schedule.smt2"):
-
+def generate_decisional_model(n, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even!")
@@ -353,8 +352,7 @@ def generate_decisional_model(n, filename="schedule.smt2"):
 
 
 # Models exploiting Kirkman's algorithm with symmetry breaking and optimality - QF_UFLIA logic
-def generate_optimal_model(n, filename="schedule.smt2"):
-
+def generate_optimal_model(n, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even!")
@@ -462,8 +460,7 @@ def generate_optimal_model(n, filename="schedule.smt2"):
         f.close()
 
 
-def generate_optimal_model2(n, filename="schedule.smt2"):
-
+def generate_optimal_model2(n, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even!")
@@ -495,7 +492,7 @@ def generate_optimal_model2(n, filename="schedule.smt2"):
 
         f.write("(declare-const bound Int)\n")
         f.write("(assert (>= bound 1))\n")
-        f.write(f"(assert (<= bound {n-1}))\n")
+        f.write(f"(assert (<= bound {n - 1}))\n")
 
         """for t in range(1, n + 1):
             f.write(f"(declare-fun diff_{t} () Int)\n")"""
@@ -634,24 +631,6 @@ def model(n, solver_name: str):
             print("UNSAT")  # to
 
 
-# too much time
-def solve_from_file(file_path, solver_name):
-    parser = SmtLibParser()
-    script = parser.get_script_fname(file_path)  # parsing the .smt2 file
-
-    with Solver(name=solver_name, logic="QF_UFLIA") as solver:
-
-        script.evaluate(solver)  # loading the assertions
-
-        if solver.solve():
-            print("SAT")
-        else:
-            print("UNSAT")
-        # result = solver.solve()
-        # print("SAT" if result else "UNSAT")
-        return solver
-
-
 # Circle method
 def kirkman_tournament(n):
     """
@@ -734,7 +713,6 @@ def solution_to_matrix_optimathsat(n: int, solution: list):
 
 
 def generate_json(n: int, result: dict, solver: str):
-
     os.makedirs(RES_DIR, exist_ok=True)
 
     json_path = (RES_DIR / f"{n}.json").resolve()
@@ -754,7 +732,7 @@ def generate_json(n: int, result: dict, solver: str):
 
 
 def solve(n: int, solver_type: str, mode: str):
-    print("-"*100)
+    print("-" * 100)
     print(f"Running n={n} in {mode} mode with {solver_type}")
 
     if mode == "decisional":
@@ -762,7 +740,7 @@ def solve(n: int, solver_type: str, mode: str):
         generate_decisional_model(n)
         try:
             result = subprocess.run(
-                [solver_type, "schedule.smt2"],
+                [solver_type, SMT_FILE_PATH],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -822,7 +800,7 @@ def solve(n: int, solver_type: str, mode: str):
         try:
             if solver_type == "z3":
                 result = subprocess.run(
-                    [solver_type, "schedule.smt2"],
+                    [solver_type, SMT_FILE_PATH],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -856,7 +834,7 @@ def solve(n: int, solver_type: str, mode: str):
 
             else:
                 result = subprocess.run(
-                    [solver_type, "-optimization=true", "schedule.smt2"],
+                    [solver_type, "-optimization=true", SMT_FILE_PATH],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -909,11 +887,11 @@ def solve(n: int, solver_type: str, mode: str):
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    group = parser.add_mutually_exclusive_group() # to exclude incompatible commands
+    group = parser.add_mutually_exclusive_group()  # to exclude incompatible commands
     group.add_argument("-all", action="store_true",
-                        help="Run all instances for n from 2 to 20")
+                       help="Run all instances for n from 2 to 20")
     group.add_argument("-n", type=int, choices=range(4, 31, 2),
-                        help="Number of teams (must be even)")
+                       help="Number of teams (must be even)")
     parser.add_argument("--solver", type=str, choices=["z3", "optimathsat", "all"], default="all",
                         help="SMT solver type:\n - z3: Z3 solver (default value),\n - optimathsat: OptiMathSAT "
                              "solver, \n - all: run both solvers")
@@ -937,27 +915,27 @@ def main():
                         try:
                             solve(n, solver, mode)
                         except TimeoutError as e:
-                            print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                            print(f"Timeout for n={n} with {solver} in {mode} mode.")
         elif solver == "all":
             for n in range(4, 21, 2):
                 for solver in solvers:
                     try:
                         solve(n, solver, mode)
                     except TimeoutError as e:
-                        print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                        print(f"Timeout for n={n} with {solver} in {mode} mode.")
         elif mode == "all":
             for n in range(4, 21, 2):
                 for mode in modes:
                     try:
                         solve(n, solver, mode)
                     except TimeoutError as e:
-                        print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                        print(f"Timeout for n={n} with {solver} in {mode} mode.")
         else:
             for n in range(4, 21, 2):
                 try:
                     solve(n, solver, mode)
                 except TimeoutError as e:
-                    print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                    print(f"Timeout for n={n} with {solver} in {mode} mode.")
                     return
     elif n:
         if solver == "all" and mode == "all":
@@ -966,19 +944,19 @@ def main():
                     try:
                         solve(n, solver, mode)
                     except TimeoutError as e:
-                        print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                        print(f"Timeout for n={n} with {solver} in {mode} mode.")
         elif solver == "all":
             for solver in solvers:
                 try:
                     solve(n, solver, mode)
                 except TimeoutError as e:
-                    print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                    print(f"Timeout for n={n} with {solver} in {mode} mode.")
         elif mode == "all":
             for mode in modes:
                 try:
                     solve(n, solver, mode)
                 except TimeoutError as e:
-                    print(f"{e}: Timout for n={n} with {solver} in {mode} mode.")
+                    print(f"Timeout for n={n} with {solver} in {mode} mode.")
         else:
             solve(n, solver, mode)
 
