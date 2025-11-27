@@ -271,7 +271,9 @@ def convert_to_matrix(n: int, solution: Sequence[Tuple[int, int, int, int]]) -> 
     return matrix
 
 
-def save_results_as_json(n: int, results: Dict, model_name: str, output_dir: str = "../../res/SAT") -> None:
+def save_results_as_json(n: int, results: Dict, model_name: str, output_dir: str = None) -> None:
+    current_script_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.join(current_script_dir, "../../res/SAT")
     """Save solver results to a JSON file. Behaviour preserved from original code."""
     ensure_dir(output_dir)
     json_path = os.path.join(output_dir, f"{n}.json")
