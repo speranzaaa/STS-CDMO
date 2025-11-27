@@ -31,7 +31,7 @@ echo ""
 echo ""
 echo "----- Starting SAT  -----"
 echo ""
-python3 source/SAT/run_sat.py -n $N --all
+python3 source/SAT/run_sat.py -n $N --save_json --all
 echo ""
 echo "----- SAT model completed -----"
 echo ""
