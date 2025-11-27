@@ -8,7 +8,6 @@ cd "$ROOT_DIR" || exit 1
 
 # ============================================================
 #  CHECK.SH
-#  Genera tutte le combinazioni per un singolo n pari passato
 # ============================================================
 
 if [ $# -ne 1 ]; then

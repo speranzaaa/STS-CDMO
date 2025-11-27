@@ -31,7 +31,7 @@ echo ""
 echo ""
 echo "----- Starting SAT  -----"
 echo ""
-____________________________________________________CIAO ANGELA SCRIVI QUI :)
+python3 source/SAT/run_sat.py -n $N --all
 echo ""
 echo "----- SAT model completed -----"
 echo ""

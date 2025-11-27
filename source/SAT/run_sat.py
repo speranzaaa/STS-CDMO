@@ -1,12 +1,3 @@
-"""
-Refactored Sport Tournament Scheduler (STS)
-- Functionality preserved exactly.
-- Improved readability, PEP8-compliant names, docstrings and comments.
-- Grouped helper functions and clearer variable names.
-
-Note: Z3 `from z3 import *` is preserved to avoid changing external behaviour.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -280,7 +271,7 @@ def convert_to_matrix(n: int, solution: Sequence[Tuple[int, int, int, int]]) -> 
     return matrix
 
 
-def save_results_as_json(n: int, results: Dict, model_name: str, output_dir: str = "./res/SAT") -> None:
+def save_results_as_json(n: int, results: Dict, model_name: str, output_dir: str = "../../res/SAT") -> None:
     """Save solver results to a JSON file. Behaviour preserved from original code."""
     ensure_dir(output_dir)
     json_path = os.path.join(output_dir, f"{n}.json")

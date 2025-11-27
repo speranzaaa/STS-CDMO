@@ -41,7 +41,15 @@ Note that all possible params are specified in params.txt
 python3 source/CP/run_cp.py -n n -t time --solver solver
 
 # SAT
-____________________________________________________CIAO ANGELA SCRIVI QUI :)
+python3 source/SAT/run_sat.py \
+    --n <NUM_TEAMS_OR_RANGE> \
+    --exactly_one_encoding <np|bw|seq|heule> \
+    --at_most_k_encoding <np|seq|totalizer> \
+    --run_decisional | --run_optimization \
+    [--sb | --no_sb] \
+    [--timeout <SECONDS>] \
+    [--verbose] \
+    [--save_json]
 
 # SMT
 python3 smt_model.py -n n --solver solver --mode mode

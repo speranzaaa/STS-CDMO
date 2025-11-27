@@ -2,6 +2,9 @@ CP
     solver: "gecode", "chuffed", "gecode_opt", "gecode_without_sb", "chuffed_without_sb", "gecode_opt_without_sb" 
 
 SAT
+    exactly_one_encoding: "np", "bw", "seq", "heule"
+    at_most_k_encoding: "np", "seq", "totalizer"
+    sym: "sb", "no_sb"
 
 SMT
 
