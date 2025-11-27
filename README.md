@@ -42,7 +42,7 @@ python3 source/CP/run_cp.py -n n -t time --solver solver
 
 # SAT
 python3 source/SAT/run_sat.py \
-    --n <NUM_TEAMS_OR_RANGE> \
+    -n <NUM_TEAMS_OR_RANGE> \
     --exactly_one_encoding <np|bw|seq|heule> \
     --at_most_k_encoding <np|seq|totalizer> \
     --run_decisional | --run_optimization \
