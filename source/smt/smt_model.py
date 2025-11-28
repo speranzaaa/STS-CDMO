@@ -1,5 +1,4 @@
 import argparse
-import itertools
 import math
 import os
 import subprocess
@@ -284,7 +283,7 @@ def generate_smtfile_CM_UF(n, filename=SMT_FILE_PATH):
 
 
 # Models exploiting Kirkman's algorithm with symmetry breaking (2) - QF_LIA logic
-def generate_decisional_model(n, filename=SMT_FILE_PATH):
+def generate_decisional_model(n: int, sb: bool, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even!")
@@ -308,15 +307,16 @@ def generate_decisional_model(n, filename=SMT_FILE_PATH):
                 for i in range(1, periods + 1):
                     f.write(f"(declare-const m_{t1}_{t2}_p{i} Bool)\n")
 
-        # Fix First Week (Symmetry Breaking)
-        p = 1
-        for (t1, t2) in schedule[0]:
-            for i in range(1, periods + 1):
-                if i == p:
-                    f.write(f"(assert m_{t1}_{t2}_p{i})\n")
-                else:
-                    f.write(f"(assert (not m_{t1}_{t2}_p{i}))\n")
-            p = p + 1
+        if(sb):
+            # Fix First Week (Symmetry Breaking)
+            p = 1
+            for (t1, t2) in schedule[0]:
+                for i in range(1, periods + 1):
+                    if i == p:
+                        f.write(f"(assert m_{t1}_{t2}_p{i})\n")
+                    else:
+                        f.write(f"(assert (not m_{t1}_{t2}_p{i}))\n")
+                p = p + 1
 
         # Additional Constraint N. 1: Each match assigned to exactly one period
         for week in schedule:
@@ -353,7 +353,7 @@ def generate_decisional_model(n, filename=SMT_FILE_PATH):
 
 
 # Models exploiting Kirkman's algorithm with symmetry breaking and optimality - QF_UFLIA logic
-def generate_optimal_model(n, filename=SMT_FILE_PATH):
+def generate_optimal_model(n: int, sb: bool, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even!")
@@ -461,7 +461,7 @@ def generate_optimal_model(n, filename=SMT_FILE_PATH):
         f.close()
 
 
-def generate_optimal_model2(n, filename=SMT_FILE_PATH):
+def generate_optimal_model2(n: int, sb: bool, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even!")
@@ -779,13 +779,13 @@ def generate_json(n: int, result: dict, solver: str):
         json.dump(previous_results, f, indent=1)
 
 
-def solve(n: int, solver_type: str, mode: str):
+def solve(n: int, solver_type: str, mode: str, sb: bool):
     print("-" * 100)
     print(f"Running n = {n} in {mode} mode with {solver_type}")
 
     if mode == "decisional":
         start = time.time()
-        generate_decisional_model(n)
+        generate_decisional_model(n, sb)
         try:
             result = subprocess.run(
                 [solver_type, SMT_FILE_PATH],
@@ -825,7 +825,10 @@ def solve(n: int, solver_type: str, mode: str):
 
             print(f"Time of execution: {runtime}s")
 
-            generate_json(n, result, solver_type)
+            if sb:
+                generate_json(n, result, solver_type)
+            else:
+                generate_json(n, result, solver_type + "_nosb")
 
         except subprocess.TimeoutExpired:
             runtime = 300
@@ -839,13 +842,16 @@ def solve(n: int, solver_type: str, mode: str):
 
             print(f"Time of execution: {runtime}s")
 
-            generate_json(n, result, solver_type)
+            if sb:
+                generate_json(n, result, solver_type)
+            else:
+                generate_json(n, result, solver_type + "_nosb")
 
             raise TimeoutError
 
     elif mode == "optimal":
         start = time.time()
-        generate_optimal_model2(n)
+        generate_optimal_model2(n, sb)
         try:
             if solver_type == "z3":
                 result = subprocess.run(
@@ -918,7 +924,10 @@ def solve(n: int, solver_type: str, mode: str):
 
             print(f"Time of execution: {runtime}s")
 
-            generate_json(n, result, solver_type + "_opt")
+            if sb:
+                generate_json(n, result, solver_type + "_opt")
+            else:
+                generate_json(n, result, solver_type + "_opt" + "_nosb")
 
         except subprocess.TimeoutExpired:
 
@@ -933,8 +942,10 @@ def solve(n: int, solver_type: str, mode: str):
 
             print(f"Time of execution: {runtime}s")
 
-            generate_json(n, result, solver_type + "_opt")
-
+            if sb:
+                generate_json(n, result, solver_type + "_opt")
+            else:
+                generate_json(n, result, solver_type + "_opt" + "_nosb")
             raise TimeoutError
 
 
@@ -951,6 +962,8 @@ def main():
     parser.add_argument("--mode", type=str, choices=["decisional", "optimal", "all"], default="all",
                         help="Running mode for the solver: \n - decisional, \n - optimal (for optimization),"
                              " \n - all: run in both modes (default value)")
+    parser.add_argument("-nosb", action="store_true",
+                        help="Option to remove symmetry breakings")
 
     args = parser.parse_args()
 
@@ -960,6 +973,7 @@ def main():
     n = args.n
     solver = args.solver
     mode = args.mode
+    sb = not args.nosb
 
     if args.all:
         if solver == "all" and mode == "all":
@@ -967,7 +981,7 @@ def main():
                 for solver in solvers:
                     for mode in modes:
                         try:
-                            solve(n, solver, mode)
+                            solve(n, solver, mode, sb)
                         except TimeoutError as e:
                             print(f"Timeout for n={n} with {solver} in {mode} mode.")
         elif solver == "all":
@@ -975,7 +989,7 @@ def main():
                 tmot = 0
                 for solver in solvers:
                     try:
-                        solve(n, solver, mode)
+                        solve(n, solver, mode, sb)
                     except TimeoutError as e:
                         print(f"Timeout for n={n} with {solver} in {mode} mode.")
                         tmot = tmot + 1
@@ -986,7 +1000,7 @@ def main():
                 tmot = 0
                 for mode in modes:
                     try:
-                        solve(n, solver, mode)
+                        solve(n, solver, mode, sb)
                     except TimeoutError as e:
                         print(f"Timeout for n={n} with {solver} in {mode} mode.")
                         tmot = tmot + 1
@@ -995,7 +1009,7 @@ def main():
         else:
             for n in range(4, 21, 2):
                 try:
-                    solve(n, solver, mode)
+                    solve(n, solver, mode, sb)
                 except TimeoutError as e:
                     print(f"Timeout for n={n} with {solver} in {mode} mode.")
                     return
@@ -1004,23 +1018,23 @@ def main():
             for solver in solvers:
                 for mode in modes:
                     try:
-                        solve(n, solver, mode)
+                        solve(n, solver, mode, sb)
                     except TimeoutError as e:
                         print(f"Timeout for n={n} with {solver} in {mode} mode.")
         elif solver == "all":
             for solver in solvers:
                 try:
-                    solve(n, solver, mode)
+                    solve(n, solver, mode, sb)
                 except TimeoutError as e:
                     print(f"Timeout for n={n} with {solver} in {mode} mode.")
         elif mode == "all":
             for mode in modes:
                 try:
-                    solve(n, solver, mode)
+                    solve(n, solver, mode, sb)
                 except TimeoutError as e:
                     print(f"Timeout for n={n} with {solver} in {mode} mode.")
         else:
-            solve(n, solver, mode)
+            solve(n, solver, mode, sb)
 
 
 if __name__ == "__main__":
