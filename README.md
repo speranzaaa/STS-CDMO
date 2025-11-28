@@ -34,6 +34,7 @@ docker run -it -v ${PWD}:/app <image-name> bash
 
 ### 3) Running instructions
 Note that all possible params are specified in params.txt
+Make sure to set LF as EOF sequence
 
 * Run a single model 
 ```
