@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import math
 import os
 import subprocess
@@ -14,7 +15,7 @@ SMT_FILE_PATH = BASE / "schedule.smt2"
 
 
 # Model without the use of the circle method (kirkman algorithm) - QF_UFLIA logic
-def generate_smtfile_QFUF(n, filename="schedule.smt2"):
+def generate_smtfile_QFUF(n, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even!")
@@ -72,7 +73,7 @@ def generate_smtfile_QFUF(n, filename="schedule.smt2"):
 
 
 # Model without the use of the circle method (kirkman algorithm) - QF_LIA logic
-def generate_smtfile_QF(n, filename="schedule.smt2"):
+def generate_smtfile_QF(n, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even")
@@ -132,7 +133,7 @@ def generate_smtfile_QF(n, filename="schedule.smt2"):
 
 
 # Model exploiting Kirkman's algorithm without symmetry breaking  - QF_LIA logic
-def generate_smtfile_CM(n, filename="schedule.smt2"):
+def generate_smtfile_CM(n, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even!")
@@ -190,7 +191,7 @@ def generate_smtfile_CM(n, filename="schedule.smt2"):
 
 
 # Model exploiting Kirkman's algorithm with symmetry breaking (1) - QF_UFLIA logic
-def generate_smtfile_CM_UF(n, filename="schedule.smt2"):
+def generate_smtfile_CM_UF(n, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
         raise ValueError("n must be even!")
@@ -282,7 +283,7 @@ def generate_smtfile_CM_UF(n, filename="schedule.smt2"):
         f.close()
 
 
-# Models exploiting Kirkman's algorithm with symmetry breaking (2) - QF_UFLIA logic
+# Models exploiting Kirkman's algorithm with symmetry breaking (2) - QF_LIA logic
 def generate_decisional_model(n, filename=SMT_FILE_PATH):
     # Check if the number of teams is even
     if n % 2 != 0:
@@ -297,7 +298,7 @@ def generate_decisional_model(n, filename=SMT_FILE_PATH):
 
     with open(filename, "w") as f:
         f.write("(set-option :produce-models true)\n")
-        f.write("(set-logic QF_UFLIA)\n")  # Set the theory
+        f.write("(set-logic QF_LIA)\n")  # Set the theory
 
         # Variables Definition
         for week in schedule:
@@ -305,7 +306,7 @@ def generate_decisional_model(n, filename=SMT_FILE_PATH):
                 team_matches[t1].append((t1, t2))
                 team_matches[t2].append((t1, t2))
                 for i in range(1, periods + 1):
-                    f.write(f"(declare-fun m_{t1}_{t2}_p{i} () Bool)\n")
+                    f.write(f"(declare-const m_{t1}_{t2}_p{i} Bool)\n")
 
         # Fix First Week (Symmetry Breaking)
         p = 1
@@ -475,7 +476,7 @@ def generate_optimal_model2(n, filename=SMT_FILE_PATH):
     with open(filename, "w") as f:
         f.write("(set-option :produce-models true)\n")
         f.write("(set-option :opt.priority box)\n")
-        f.write("(set-logic QF_UFLIA)\n")  # Set the theory
+        f.write("(set-logic QF_LIA)\n")  # Set the theory
 
         # Variables Definition
         for week in schedule:
@@ -483,12 +484,12 @@ def generate_optimal_model2(n, filename=SMT_FILE_PATH):
                 team_matches[t1].append((t1, t2))
                 team_matches[t2].append((t1, t2))
                 for i in range(1, periods + 1):
-                    f.write(f"(declare-fun m_{t1}_{t2}_p{i} () Bool)\n")
+                    f.write(f"(declare-const m_{t1}_{t2}_p{i} Bool)\n")
 
         # Variables for optimization
         for week in schedule:
             for (t1, t2) in week:
-                f.write(f"(declare-fun h_{t1}_{t2} () Bool)\n")
+                f.write(f"(declare-const h_{t1}_{t2} Bool)\n")
 
         f.write("(declare-const bound Int)\n")
         f.write("(assert (>= bound 1))\n")
@@ -569,6 +570,11 @@ def generate_optimal_model2(n, filename=SMT_FILE_PATH):
             for (t1, t2) in week:
                 for p in range(1, periods + 1):
                     f.write(f"(get-value (m_{t1}_{t2}_p{p}))\n")
+
+        for week in schedule:
+            for (t1, t2) in week:
+                f.write(f"(get-value (h_{t1}_{t2}))\n")
+
         f.write("(get-objectives)\n")
         f.close()
 
@@ -675,38 +681,80 @@ def kirkman_tournament(n):
 
 
 def solution_to_matrix(n: int, solution: list):
-    schedule = []  # list for the periods
+    # -- List for the periods --
+    schedule = []
     for _ in range(n // 2):
         schedule.append([])
 
-    x = (n - 1) * (n // 2) * (n // 2)
+    periods = n // 2
+    weeks = n - 1
+    x = weeks * periods * periods  # number of matches variables
     matches = solution[:x]  # taking the matches variables from the solution
+    home_away_variables = solution[x:x + (weeks * periods)]
     obj = solution[x:]
-    for m in matches:  # getting the matches from the solution
-        m = m.split(" ")
-        if m[1][0] == "t":
-            match = m[0].split("_")
-            period = int(match[-1][1:])
-            schedule[period - 1].append([int(match[1]), int(match[2])])
+
+    if len(home_away_variables) > 0:
+        i = 0
+        for m in matches:  # getting the matches from the solution
+            m = m.split(" ")
+            if m[1][0] == "t":
+                match = m[0].split("_")
+                period = int(match[-1][1:])
+                v = home_away_variables[i].split(" ")
+                teams = v[0].split("_")
+                if v[1][0] == "t":
+                    schedule[period - 1].append([int(teams[1]), int(teams[2])])
+                else:
+                    schedule[period - 1].append([int(teams[2]), int(teams[1])])
+                i = i + 1
+    else:
+        for m in matches:  # getting the matches from the solution
+            m = m.split(" ")
+            if m[1][0] == "t":
+                match = m[0].split("_")
+                period = int(match[-1][1:])
+                schedule[period - 1].append([int(match[1]), int(match[2])])
+
     if len(solution) > x:
         obj = obj[-2].split(" ")[-1][:-1]  # objective function value
     return schedule, obj
 
 
 def solution_to_matrix_optimathsat(n: int, solution: list):
-    schedule = []  # list for the periods
+    # -- List for the periods --
+    schedule = []
     for _ in range(n // 2):
         schedule.append([])
 
-    x = (n - 1) * (n // 2) * (n // 2)
+    periods = n // 2
+    weeks = n - 1
+    x = weeks * periods * periods  # number of matches variables
     matches = solution[:x]  # taking the matches variables from the solution
+    home_away_variables = solution[x:x + (weeks * periods)]
     obj = solution[x:]
-    for m in matches:  # getting the matches from the solution
-        m = m.split(" ")
-        if m[2][0] == "t":
-            match = m[1].split("_")
-            period = int(match[-1][1:])
-            schedule[period - 1].append([int(match[1]), int(match[2])])
+
+    if len(home_away_variables) > 0:
+        i = 0
+        for m in matches:  # getting the matches from the solution
+            m = m.split(" ")
+            if m[2][0] == "t":
+                match = m[1].split("_")
+                period = int(match[-1][1:])
+                v = home_away_variables[i].split(" ")
+                teams = v[1].split("_")
+                if v[2][0] == "t":
+                    schedule[period - 1].append([int(teams[1]), int(teams[2])])
+                else:
+                    schedule[period - 1].append([int(teams[2]), int(teams[1])])
+                i = i + 1
+    else:
+        for m in matches:  # getting the matches from the solution
+            m = m.split(" ")
+            if m[2][0] == "t":
+                match = m[1].split("_")
+                period = int(match[-1][1:])
+                schedule[period - 1].append([int(match[1]), int(match[2])])
+
     if len(solution) > x:
         obj = obj[-2].split(" ")[-1][:-1]  # objective function value
     return schedule, obj
@@ -733,7 +781,7 @@ def generate_json(n: int, result: dict, solver: str):
 
 def solve(n: int, solver_type: str, mode: str):
     print("-" * 100)
-    print(f"Running n={n} in {mode} mode with {solver_type}")
+    print(f"Running n = {n} in {mode} mode with {solver_type}")
 
     if mode == "decisional":
         start = time.time()
@@ -775,20 +823,21 @@ def solve(n: int, solver_type: str, mode: str):
                     "sol": []
                 }
 
-            print(f"Time of execution: {runtime}")
+            print(f"Time of execution: {runtime}s")
 
             generate_json(n, result, solver_type)
 
         except subprocess.TimeoutExpired:
+            runtime = 300
 
             result = {
-                "time": 300,
+                "time": runtime,
                 "optimal": False,
                 "obj": None,
                 "sol": []
             }
 
-            print(f"Time of execution: {runtime}")
+            print(f"Time of execution: {runtime}s")
 
             generate_json(n, result, solver_type)
 
@@ -867,18 +916,22 @@ def solve(n: int, solver_type: str, mode: str):
                         "sol": []
                     }
 
-            print(f"Time of execution: {runtime}")
+            print(f"Time of execution: {runtime}s")
 
             generate_json(n, result, solver_type + "_opt")
 
         except subprocess.TimeoutExpired:
 
+            runtime = 300
+
             result = {
-                "time": 300,
+                "time": runtime,
                 "optimal": False,
                 "obj": None,
                 "sol": []
             }
+
+            print(f"Time of execution: {runtime}s")
 
             generate_json(n, result, solver_type + "_opt")
 
@@ -889,14 +942,15 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     group = parser.add_mutually_exclusive_group()  # to exclude incompatible commands
     group.add_argument("-all", action="store_true",
-                       help="Run all instances for n from 2 to 20")
-    group.add_argument("-n", type=int, choices=range(4, 31, 2),
+                       help="Run all instances for n from 4 to 20")
+    group.add_argument("-n", type=int, choices=(range(4, 25, 2)),
                        help="Number of teams (must be even)")
     parser.add_argument("--solver", type=str, choices=["z3", "optimathsat", "all"], default="all",
-                        help="SMT solver type:\n - z3: Z3 solver (default value),\n - optimathsat: OptiMathSAT "
-                             "solver, \n - all: run both solvers")
+                        help="SMT solver type:\n - z3: Z3 solver,\n - optimathsat: OptiMathSAT "
+                             "solver, \n - all: run both solvers (default value)")
     parser.add_argument("--mode", type=str, choices=["decisional", "optimal", "all"], default="all",
-                        help="Running mode for the solver: \n - decisional, \n - optimal (for optimization)")
+                        help="Running mode for the solver: \n - decisional, \n - optimal (for optimization),"
+                             " \n - all: run in both modes (default value)")
 
     args = parser.parse_args()
 
@@ -918,18 +972,26 @@ def main():
                             print(f"Timeout for n={n} with {solver} in {mode} mode.")
         elif solver == "all":
             for n in range(4, 21, 2):
+                tmot = 0
                 for solver in solvers:
                     try:
                         solve(n, solver, mode)
                     except TimeoutError as e:
                         print(f"Timeout for n={n} with {solver} in {mode} mode.")
+                        tmot = tmot + 1
+                if len(solvers) == tmot:
+                    return
         elif mode == "all":
             for n in range(4, 21, 2):
+                tmot = 0
                 for mode in modes:
                     try:
                         solve(n, solver, mode)
                     except TimeoutError as e:
                         print(f"Timeout for n={n} with {solver} in {mode} mode.")
+                        tmot = tmot + 1
+                if len(modes) == tmot:
+                    return
         else:
             for n in range(4, 21, 2):
                 try:

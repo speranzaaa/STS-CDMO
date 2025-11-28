@@ -7,6 +7,8 @@ SAT
     sym: "sb", "no_sb"
 
 SMT
+    solver: "z3", "optimathsat", "all"
+    mode: "decisional", "optimal", "all"
 
 MIP
     solver_type: "cbc", "highs", "sciPy"
