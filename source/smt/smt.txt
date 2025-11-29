@@ -4,6 +4,7 @@
 
   -all -> Run all instances for n from 4 to 20
   -n -> Number of teams (must be even)
+  -nosb -> Run execution without symmetry breakings
   --solver -> SMT Solver. Possible values:
                 - z3
                 - optimathsat

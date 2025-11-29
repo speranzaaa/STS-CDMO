@@ -53,7 +53,7 @@ python3 source/SAT/run_sat.py \
     [--save_json]
 
 # SMT
-python3 source/SMT/smt_model.py -n n --solver solver --mode mode
+python3 source/SMT/smt_model.py -n n --solver solver --mode mode [-nosb]
 
 # MIP
 python3 source/MIP/run_mip.py --mode single --n n --time_limit time --solver_type solver --opt opt --sym sym
@@ -76,6 +76,21 @@ python3 solution_checker.py ./res/<model>
 ```
 
 
+# Parameters
 
+## CP
+- solver: "gecode", "chuffed", "gecode_opt", "gecode_without_sb", "chuffed_without_sb", "gecode_opt_without_sb" 
 
-
+## SAT
+- exactly_one_encoding: "np", "bw", "seq", "heule"
+- at_most_k_encoding: "np", "seq", "totalizer"
+- sym: "sb", "no_sb"
+## SMT
+- solver: "z3", "optimathsat", "all"
+- mode: "decisional", "optimal", "all"
+- [-nosb]
+- [-all]
+## MIP
+- solver_type: "cbc", "highs", "sciPy"
+- opt: "homeAwayDiff0", "homeAwayDiff1", "feasible"
+- sym: "circleMethod", "fixWeek1", "fixWeek2", "noSym"
