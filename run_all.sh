@@ -24,7 +24,7 @@ echo ""
 echo ""
 echo "----- Starting SMT -----"
 echo ""
-python3 source/SMT/smt_model.py -all --solver all --mode all
+python3 source/SMT/run_smt.py -all --solver all --mode all
 echo ""
 echo "----- SMT model completed -----"
 echo ""

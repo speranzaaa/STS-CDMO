@@ -53,7 +53,7 @@ python3 source/SAT/run_sat.py \
     [--save_json]
 
 # SMT
-python3 source/SMT/smt_model.py -n n --solver solver --mode mode [-nosb]
+python3 source/SMT/run_smt.py -n n --solver solver --mode mode [-nosb]
 
 # MIP
 python3 source/MIP/run_mip.py --mode single --n n --time_limit time --solver_type solver --opt opt --sym sym

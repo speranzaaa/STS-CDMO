@@ -8,7 +8,7 @@ from pysmt.shortcuts import Solver, Symbol, Not, Plus, Ite, Int, Equals
 from pysmt.typing import BOOL
 import json
 
-BASE = Path(__file__).resolve().parent  # directory containing smt_model.py
+BASE = Path(__file__).resolve().parent  # directory containing run_smt.py
 RES_DIR = BASE / "../../res/SMT"
 SMT_FILE_PATH = BASE / "schedule.smt2"
 
