@@ -1,0 +1,50 @@
+{
+ "z3": {
+  "time": 0,
+  "optimal": true,
+  "obj": null,
+  "sol": []
+ },
+ "z3_opt": {
+  "time": 0,
+  "optimal": true,
+  "obj": null,
+  "sol": []
+ },
+ "optimathsat": {
+  "time": 0,
+  "optimal": true,
+  "obj": null,
+  "sol": []
+ },
+ "optimathsat_opt": {
+  "time": 0,
+  "optimal": true,
+  "obj": null,
+  "sol": []
+ },
+ "z3_nosb": {
+  "time": 0,
+  "optimal": true,
+  "obj": null,
+  "sol": []
+ },
+ "z3_opt_nosb": {
+  "time": 0,
+  "optimal": true,
+  "obj": null,
+  "sol": []
+ },
+ "optimathsat_nosb": {
+  "time": 0,
+  "optimal": true,
+  "obj": null,
+  "sol": []
+ },
+ "optimathsat_opt_nosb": {
+  "time": 0,
+  "optimal": true,
+  "obj": null,
+  "sol": []
+ }
+}
