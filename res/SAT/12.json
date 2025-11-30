@@ -1,6 +1,6 @@
 {
  "decisional_np_np_sb": {
-  "time": 2,
+  "time": 4,
   "optimal": true,
   "obj": null,
   "sol": [
@@ -283,7 +283,7 @@
   ]
  },
  "decisional_np_np_no_sb": {
-  "time": 2,
+  "time": 4,
   "optimal": true,
   "obj": null,
   "sol": [
@@ -566,7 +566,7 @@
   ]
  },
  "decisional_np_seq_sb": {
-  "time": 0,
+  "time": 2,
   "optimal": true,
   "obj": null,
   "sol": [
@@ -849,7 +849,7 @@
   ]
  },
  "decisional_np_seq_no_sb": {
-  "time": 1,
+  "time": 5,
   "optimal": true,
   "obj": null,
   "sol": [
@@ -1132,7 +1132,7 @@
   ]
  },
  "decisional_np_totalizer_sb": {
-  "time": 1,
+  "time": 4,
   "optimal": true,
   "obj": null,
   "sol": [
@@ -1415,7 +1415,7 @@
   ]
  },
  "decisional_np_totalizer_no_sb": {
-  "time": 1,
+  "time": 4,
   "optimal": true,
   "obj": null,
   "sol": [
@@ -3113,7 +3113,7 @@
   ]
  },
  "decisional_heule_totalizer_no_sb": {
-  "time": 0,
+  "time": 1,
   "optimal": true,
   "obj": null,
   "sol": [
@@ -3396,7 +3396,7 @@
   ]
  },
  "optimization_np_np_sb": {
-  "time": 6,
+  "time": 10,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -3679,7 +3679,7 @@
   ]
  },
  "optimization_np_np_no_sb": {
-  "time": 6,
+  "time": 9,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -3962,7 +3962,7 @@
   ]
  },
  "optimization_np_seq_sb": {
-  "time": 2,
+  "time": 3,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -4245,7 +4245,7 @@
   ]
  },
  "optimization_np_seq_no_sb": {
-  "time": 2,
+  "time": 3,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -4528,7 +4528,7 @@
   ]
  },
  "optimization_np_totalizer_sb": {
-  "time": 3,
+  "time": 5,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -4811,7 +4811,7 @@
   ]
  },
  "optimization_np_totalizer_no_sb": {
-  "time": 3,
+  "time": 4,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -5094,7 +5094,7 @@
   ]
  },
  "optimization_heule_np_sb": {
-  "time": 6,
+  "time": 9,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -5377,7 +5377,7 @@
   ]
  },
  "optimization_heule_np_no_sb": {
-  "time": 6,
+  "time": 8,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -5660,7 +5660,7 @@
   ]
  },
  "optimization_heule_seq_sb": {
-  "time": 2,
+  "time": 3,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -5943,7 +5943,7 @@
   ]
  },
  "optimization_heule_seq_no_sb": {
-  "time": 2,
+  "time": 3,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -6226,7 +6226,7 @@
   ]
  },
  "optimization_heule_totalizer_sb": {
-  "time": 4,
+  "time": 5,
   "optimal": true,
   "obj": 1,
   "sol": [
@@ -6509,7 +6509,7 @@
   ]
  },
  "optimization_heule_totalizer_no_sb": {
-  "time": 3,
+  "time": 7,
   "optimal": true,
   "obj": 1,
   "sol": [
